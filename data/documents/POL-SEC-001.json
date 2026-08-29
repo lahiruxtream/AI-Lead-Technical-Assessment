@@ -1,0 +1,6 @@
+{
+  "id": "POL-SEC-001",
+  "title": "Enterprise Information Classification Policy",
+  "content": "Information is classified as public, internal, confidential, or restricted. Internal information is available to employees with a business need. Confidential information requires department membership and manager approval. Credentials and customer authentication data must never be entered into conversational AI tools.",
+  "metadata": {"department": "security", "document_type": "policy", "access_level": "internal", "created_date": "2026-03-01", "category": "security"}
+}

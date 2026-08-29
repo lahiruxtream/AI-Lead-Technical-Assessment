@@ -1,0 +1,6 @@
+{
+  "id": "PROD-PAY-001",
+  "title": "Instant Payments Product Specification",
+  "content": "Instant Payments supports transfers up to LKR 5,000,000 with 24 by 7 availability. Requests use idempotency keys and step-up authentication above risk thresholds. The service availability target is 99.95 percent and the p95 authorization latency target is 800 milliseconds.",
+  "metadata": {"department": "payments", "document_type": "product", "access_level": "internal", "created_date": "2026-04-12", "category": "product"}
+}

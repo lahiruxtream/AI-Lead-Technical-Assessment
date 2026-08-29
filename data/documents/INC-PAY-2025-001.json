@@ -1,0 +1,6 @@
+{
+  "id": "INC-PAY-2025-001",
+  "title": "Payment Authorization Outage - January 2025",
+  "content": "On 14 January 2025 payment authorization failed for 31 minutes. Root cause: database connection pool exhaustion after a traffic spike. The retry storm amplified load. Resolution included raising pool limits, adding bounded exponential backoff, and enabling a circuit breaker. No customer card data was lost.",
+  "metadata": {"department": "payments", "document_type": "incident", "access_level": "internal", "created_date": "2025-01-15", "severity": "SEV-1", "category": "capacity"}
+}

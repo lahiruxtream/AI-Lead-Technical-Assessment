@@ -1,0 +1,6 @@
+{
+  "id": "SEC-PRIVATE-001",
+  "title": "Privileged Security Operations Notes",
+  "content": "Confidential security operations notes. Access is restricted to administrators in this demonstration. Secrets are stored in the enterprise vault and rotated every 30 days.",
+  "metadata": {"department": "security", "document_type": "meeting_note", "access_level": "confidential", "created_date": "2026-05-01", "category": "security"}
+}

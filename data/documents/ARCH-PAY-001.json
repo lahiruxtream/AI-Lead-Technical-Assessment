@@ -1,0 +1,6 @@
+{
+  "id": "ARCH-PAY-001",
+  "title": "Payments Platform Architecture",
+  "content": "The payment platform uses an API gateway, stateless authorization services, PostgreSQL ledgers, and two acquirer adapters. Idempotency keys prevent duplicate charges. Services publish events through Kafka. PCI data is tokenized before entering the internal network. Multi-region failover has a recovery time objective of 15 minutes.",
+  "metadata": {"department": "payments", "document_type": "architecture", "access_level": "internal", "created_date": "2026-02-01", "category": "architecture"}
+}

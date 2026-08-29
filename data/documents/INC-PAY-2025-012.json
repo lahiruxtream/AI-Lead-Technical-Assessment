@@ -1,0 +1,6 @@
+{
+  "id": "INC-PAY-2025-012",
+  "title": "Payment API Saturation - November 2025",
+  "content": "On 22 November 2025 the Payments API was degraded for 25 minutes. Root cause: connection pool exhaustion triggered by retry amplification during a database failover. Actions were to cap retries, pre-warm standby connections, and alert on pool utilization above 75 percent.",
+  "metadata": {"department": "payments", "document_type": "incident", "access_level": "internal", "created_date": "2025-11-23", "severity": "SEV-1", "category": "capacity"}
+}

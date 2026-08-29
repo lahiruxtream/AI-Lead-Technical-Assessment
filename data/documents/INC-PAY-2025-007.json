@@ -1,0 +1,6 @@
+{
+  "id": "INC-PAY-2025-007",
+  "title": "Payment Gateway Latency - June 2025",
+  "content": "On 8 June 2025 gateway latency caused intermittent payment failures for 46 minutes. Root cause: downstream acquirer timeouts combined with unbounded application retries. Remediation introduced retry budgets, circuit breaking, and acquirer health-based routing.",
+  "metadata": {"department": "payments", "document_type": "incident", "access_level": "internal", "created_date": "2025-06-09", "severity": "SEV-2", "category": "dependency"}
+}

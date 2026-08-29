@@ -1,0 +1,6 @@
+{
+  "id": "RUN-PAY-001",
+  "title": "Payments Service Recovery Runbook",
+  "content": "For payment failure rates above 5 percent, the on-call engineer must acknowledge within five minutes. Check gateway, database pool, and acquirer dashboards. Enable the circuit breaker for an unhealthy acquirer, shift traffic to the healthy route, and verify recovery for ten minutes. Declare SEV-1 when failures exceed 20 percent. Never disable fraud controls during recovery.",
+  "metadata": {"department": "payments", "document_type": "runbook", "access_level": "internal", "created_date": "2026-01-10", "category": "operations"}
+}

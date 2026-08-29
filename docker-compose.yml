@@ -1,0 +1,22 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+  ui:
+    build: .
+    env_file: .env
+    command: ["streamlit", "run", "ui/streamlit_app.py", "--server.address=0.0.0.0"]
+    volumes: ["./ui:/workspace/ui"]
+    ports: ["8501:8501"]
+    depends_on:
+      api: {condition: service_healthy}
+  mcp:
+    build: .
+    command: ["python", "-m", "app.mcp_server"]
+    ports: ["8010:8010"]

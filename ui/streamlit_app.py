@@ -1,0 +1,90 @@
+import json
+import os
+import uuid
+
+import httpx
+import streamlit as st
+
+
+st.set_page_config(page_title="Commercial Bank Knowledge AI", page_icon="🏦", layout="wide")
+st.title("🏦 Commercial Bank Knowledge Assistant")
+st.caption("Grounded enterprise answers with transparent agent activity")
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
+with st.sidebar:
+    st.header("Demo access")
+    role = st.selectbox("Role", ["viewer", "analyst", "admin"])
+    passwords = {"viewer": "viewer123", "analyst": "analyst123", "admin": "admin123"}
+    st.info({
+        "viewer": "Search and chat",
+        "analyst": "Search, analytics, MCP",
+        "admin": "All tools",
+    }[role])
+    department = st.selectbox("Department filter", ["All", "payments", "platform", "security"])
+    if st.button("New conversation"):
+        st.session_state.messages = []
+        st.session_state.session_id = str(uuid.uuid4())
+        st.rerun()
+
+chat_col, activity_col = st.columns([3, 2])
+with chat_col:
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("citations"):
+                with st.expander("Supporting evidence"):
+                    for citation in message["citations"]:
+                        st.markdown(f"**[{citation['document_id']}] {citation['title']}** — score `{citation['score']}`")
+                        st.caption(citation["text"][:500])
+
+prompt = st.chat_input("Ask about policies, architecture, runbooks, incidents, or products…")
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with chat_col, st.chat_message("user"):
+        st.markdown(prompt)
+    activity_box = activity_col.container(border=True)
+    activity_box.subheader("Live agent activity")
+    status = activity_box.status("Agent started", expanded=True)
+    answer_placeholder = chat_col.empty()
+    answer = ""
+    citations = []
+    payload = {
+        "message": prompt,
+        "session_id": st.session_state.session_id,
+        "filters": {} if department == "All" else {"department": department},
+    }
+    api_url = os.getenv("API_URL", "http://localhost:8000")
+    try:
+        with httpx.Client(timeout=60) as client:
+            with client.stream(
+                "POST", f"{api_url}/v1/chat/stream", json=payload,
+                auth=(role, passwords[role]),
+            ) as response:
+                response.raise_for_status()
+                event_name = "message"
+                for line in response.iter_lines():
+                    if line.startswith("event:"):
+                        event_name = line.removeprefix("event:").strip()
+                    elif line.startswith("data:"):
+                        event = json.loads(line.removeprefix("data:").strip())
+                        if event_name == "token":
+                            answer += event["message"]
+                            answer_placeholder.chat_message("assistant").markdown(answer + "▌")
+                        elif event_name == "final":
+                            answer = event["message"]
+                            citations = event["data"].get("citations", [])
+                        elif event_name == "error":
+                            raise RuntimeError(event["message"])
+                        else:
+                            icon = {"state": "🔄", "tool": "🛠️", "retrieval": "🔎", "memory": "🧠", "validation": "🛡️"}.get(event_name, "•")
+                            status.write(f"{icon} **{event['node']}** — {event['message']}")
+        status.update(label="Agent completed", state="complete", expanded=True)
+        answer_placeholder.chat_message("assistant").markdown(answer)
+        st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
+    except Exception as exc:
+        status.update(label="Request failed", state="error")
+        answer_placeholder.error(f"Assistant unavailable: {exc}")
