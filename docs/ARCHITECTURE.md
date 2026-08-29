@@ -30,7 +30,7 @@ flowchart LR
 4. Retrieval runs sparse and dense work asynchronously, applies metadata plus access-level filters, normalizes scores, and fuses ranks.
 5. Research requests are split into small evidence batches. Independent batch findings are produced concurrently and aggregated with safe, predefined analytics. Depth and batch size are bounded.
 6. The response agent receives only relevant evidence. Retrieved text is explicitly treated as untrusted data.
-7. The validator removes citations that do not match retrieved document IDs. The completed turn is stored in bounded session memory.
+7. The validator removes citations that do not match retrieved document IDs. The completed turn is persisted in user-isolated SQLite conversation memory.
 8. Node transitions, tool calls, retrieval results, memory changes, and validation events stream to the UI.
 
 ## Failure containment
@@ -40,7 +40,7 @@ Each integration has a defined boundary. Retrieval timeouts fail the request wit
 ## Production evolution
 
 - Replace Basic auth with OIDC/Keycloak and derive departments from signed claims.
-- Replace process memory and rate buckets with Redis; persist audited conversations in encrypted Postgres.
+- Replace SQLite memory and process-local rate buckets with Redis/Postgres and encrypted retention policies.
 - Provision separate Pinecone namespaces per tenant and use server-side metadata filters.
 - Add a cross-encoder reranker, document-level ACL service, content DLP, malware scanning, and a policy engine such as OPA.
 - Run MCP over its standard authenticated transport; the POC service deliberately keeps the network boundary obvious.

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 6
     max_query_length: int = 2000
     memory_max_turns: int = 12
+    memory_db_path: str = "data/runtime/conversations.db"
     rate_limit_capacity: int = 20
     rate_limit_refill_per_second: float = 0.2
     mcp_url: str = "http://localhost:8010"

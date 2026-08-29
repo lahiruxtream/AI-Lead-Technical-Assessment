@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import uuid
 from collections.abc import Awaitable, Callable
@@ -56,7 +57,7 @@ async def supervisor_node(state: AgentState) -> dict[str, Any]:
         intent = "research"
     else:
         intent = "search"
-    turns = await memory.context(state["session_id"])
+    turns = await memory.context(state["session_id"], state["user"].username)
     context = "\n".join(f"User: {turn.question}\nAssistant: {turn.answer}" for turn in turns)
     await emit(state, "memory", "supervisor", f"Loaded {len(turns)} previous turns")
     return {"intent": intent, "context": context}
@@ -124,7 +125,11 @@ async def validation_node(state: AgentState) -> dict[str, Any]:
 
 
 async def memory_node(state: AgentState) -> dict[str, Any]:
-    await memory.add(state["session_id"], state["question"], state["answer"])
+    citations = [item.model_dump() for item in state.get("evidence", [])]
+    await memory.add(
+        state["session_id"], state["user"].username, state["question"], state["answer"],
+        json.dumps(citations),
+    )
     await emit(state, "memory", "memory", "Conversation memory updated")
     return {}
 

@@ -87,7 +87,7 @@ Streaming endpoint: `POST /v1/chat/stream`. Event types include `state`, `tool`,
 
 - Pinecone is the production vector store; the in-memory store is deliberate so evaluators can run the POC immediately.
 - Sparse and dense ranks are normalized before weighted fusion (`0.55 dense / 0.45 sparse`). A production deployment should add a hosted cross-encoder reranker.
-- Memory is session-scoped and process-local for the POC. Redis/Postgres plus encrypted retention policies are the production path.
+- Memory and chat history are user-isolated and persisted in SQLite for the POC. Redis/Postgres plus encrypted retention policies are the production path.
 - RLM recursion is bounded by batch size and depth, preventing unbounded cost or butterfly-effect failures.
 - Retrieved documents are treated as untrusted data. They never become system instructions, and citations are checked against retrieved document IDs.
 - Authentication is Basic + hardcoded users solely because Option A is explicitly permitted. Password hashes, OAuth/OIDC, TLS, and a secrets manager are required in production.

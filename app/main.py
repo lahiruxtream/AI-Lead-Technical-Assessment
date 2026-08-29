@@ -10,6 +10,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.auth import current_user
 from app.graph import run_agent
+from app.memory import memory
 from app.models import ActivityEvent, ChatRequest, ChatResponse, User
 from app.retrieval import retriever
 from app.security import rate_limiter
@@ -25,6 +26,7 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await memory.initialize()
     await retriever.load()
     await logger.ainfo("application_started", documents=len(retriever.documents))
     yield
@@ -42,6 +44,19 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, object]:
     return {"status": "healthy", "documents": len(retriever.documents)}
+
+
+@app.get("/v1/conversations")
+async def conversations(user: User = Depends(current_user)) -> list[dict[str, str]]:
+    return await memory.list_sessions(user.username)
+
+
+@app.get("/v1/conversations/{session_id}")
+async def conversation(session_id: str, user: User = Depends(current_user)) -> dict[str, object]:
+    messages = await memory.messages(session_id, user.username)
+    if not messages:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"session_id": session_id, "messages": messages}
 
 
 @app.post("/v1/chat", response_model=ChatResponse)

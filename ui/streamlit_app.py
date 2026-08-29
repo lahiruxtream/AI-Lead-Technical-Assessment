@@ -15,20 +15,60 @@ if "messages" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
+api_url = os.getenv("API_URL", "http://localhost:8000")
+passwords = {"viewer": "viewer123", "analyst": "analyst123", "admin": "admin123"}
+
 with st.sidebar:
     st.header("Demo access")
     role = st.selectbox("Role", ["viewer", "analyst", "admin"])
-    passwords = {"viewer": "viewer123", "analyst": "analyst123", "admin": "admin123"}
+    if st.session_state.get("loaded_role") != role:
+        st.session_state.loaded_role = role
+        st.session_state.messages = []
+        st.session_state.session_id = str(uuid.uuid4())
     st.info({
         "viewer": "Search and chat",
         "analyst": "Search, analytics, MCP",
         "admin": "All tools",
     }[role])
     department = st.selectbox("Department filter", ["All", "payments", "platform", "security"])
-    if st.button("New conversation"):
+    if st.button("New conversation", use_container_width=True):
         st.session_state.messages = []
         st.session_state.session_id = str(uuid.uuid4())
         st.rerun()
+
+    st.divider()
+    st.subheader("Conversation history")
+    try:
+        history_response = httpx.get(
+            f"{api_url}/v1/conversations", auth=(role, passwords[role]), timeout=5
+        )
+        history_response.raise_for_status()
+        conversations = history_response.json()
+        if conversations:
+            labels = {
+                item["session_id"]: f"{item['title']} · {item['updated_at'][:10]}"
+                for item in conversations
+            }
+            selected = st.selectbox(
+                "Saved chats",
+                options=[item["session_id"] for item in conversations],
+                format_func=lambda session: labels[session],
+                index=None,
+                placeholder="Select a previous chat",
+            )
+            if selected and selected != st.session_state.session_id:
+                saved = httpx.get(
+                    f"{api_url}/v1/conversations/{selected}",
+                    auth=(role, passwords[role]), timeout=5,
+                )
+                saved.raise_for_status()
+                st.session_state.session_id = selected
+                st.session_state.messages = saved.json()["messages"]
+                st.rerun()
+        else:
+            st.caption("No saved conversations yet.")
+    except httpx.HTTPError:
+        st.caption("History becomes available when the API is running.")
 
 chat_col, activity_col = st.columns([3, 2])
 with chat_col:
@@ -57,7 +97,6 @@ if prompt:
         "session_id": st.session_state.session_id,
         "filters": {} if department == "All" else {"department": department},
     }
-    api_url = os.getenv("API_URL", "http://localhost:8000")
     try:
         with httpx.Client(timeout=60) as client:
             with client.stream(

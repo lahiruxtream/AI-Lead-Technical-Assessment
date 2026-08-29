@@ -10,4 +10,5 @@ dist/
 build/
 *.egg-info/
 .streamlit/secrets.toml
+data/runtime/
 AI-Lead-Technical-Assessment/
