@@ -1,5 +1,6 @@
 """Grounded answer generation with OpenAI streaming and an offline extractive fallback."""
 
+import re
 from collections.abc import Awaitable, Callable
 
 from app.config import get_settings
@@ -48,13 +49,34 @@ async def generate_answer(
     if not evidence:
         answer = "I could not find authorized evidence for this question. Please refine the query or contact the knowledge administrator."
     else:
-        bullets = []
-        for item in evidence[:4]:
-            sentence = item.text.strip().split(". ")[0].strip()
-            bullets.append(f"- {sentence}. [{item.document_id}]")
-        answer = "Based on the available enterprise knowledge:\n\n" + "\n".join(bullets) + (
-            f"\n\nAnalysis summary: {analysis}" if analysis else ""
+        question_terms = set(re.findall(r"[a-z0-9]+", question.lower()))
+        procedural = bool(
+            question_terms & {"procedure", "recovery", "recover", "runbook", "steps", "how"}
         )
+        if procedural:
+            # A procedure should preserve the ordered instructions from the best runbook instead
+            # of mixing high-level product and architecture facts into the answer.
+            item = evidence[0]
+            sentences = [
+                sentence.strip()
+                for sentence in re.split(r"(?<=[.!?])\s+", item.text.strip())
+                if sentence.strip()
+            ]
+            steps = "\n".join(
+                f"{index}. {sentence} [{item.document_id}]"
+                for index, sentence in enumerate(sentences, start=1)
+            )
+            answer = f"The documented payment recovery procedure is:\n\n{steps}"
+        else:
+            # For general questions, keep the fallback concise and restrict it to the strongest
+            # evidence rather than echoing every retrieved document.
+            bullets = []
+            for item in evidence[:3]:
+                sentence = item.text.strip().split(". ")[0].strip()
+                bullets.append(f"- {sentence}. [{item.document_id}]")
+            answer = "Based on the available enterprise knowledge:\n\n" + "\n".join(bullets)
+        if analysis:
+            answer += f"\n\nAnalysis summary: {analysis}"
     if token_sink:
         for token in answer.splitlines(keepends=True):
             await token_sink(token)
