@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langsmith import traceable
 
 from app.llm import generate_answer
 from app.memory import memory
@@ -22,6 +23,7 @@ class AgentState(TypedDict, total=False):
     user: User
     filters: dict[str, str]
     intent: str
+    search_plan: dict[str, Any]
     evidence: list[Evidence]
     context: str
     analysis: str
@@ -82,9 +84,33 @@ async def research_node(state: AgentState) -> dict[str, Any]:
     if intent != "research":
         return {"analysis": ""}
 
-    await emit(state, "state", "research", "Creating bounded recursive analysis plan")
+    year_match = re.search(r"\b(20\d{2})\b", state["question"])
+    plan = {
+        "strategy": "python-bounded-map-reduce",
+        "operations": ["filter", "partition", "analyze_subagents", "aggregate"],
+        "document_type": "incident" if "outage" in state["question"].lower() else None,
+        "year": year_match.group(1) if year_match else None,
+        "batch_size": 2,
+        "max_depth": 1,
+    }
+    if plan["document_type"]:
+        evidence = [
+            item for item in evidence if item.metadata.get("document_type") == plan["document_type"]
+        ]
+    if plan["year"]:
+        evidence = [
+            item for item in evidence if str(item.metadata.get("created_date", "")).startswith(plan["year"])
+        ]
+    await emit(
+        state,
+        "state",
+        "research",
+        "Created bounded Python search and map-reduce plan",
+        plan=plan,
+    )
     batches = [evidence[index : index + 2] for index in range(0, len(evidence), 2)]
 
+    @traceable(name="rlm-batch-subagent", run_type="chain")
     async def analyze_batch(index: int, batch: list[Evidence]) -> str:
         await emit(
             state, "tool", "research", f"Analyzing recursive batch {index + 1}/{len(batches)}",
@@ -111,13 +137,23 @@ async def research_node(state: AgentState) -> dict[str, Any]:
             "research",
             "Viewer-safe evidence synthesis used; analytics tool was not authorized",
         )
-    return {"analysis": analysis}
+    return {"analysis": analysis, "search_plan": plan, "evidence": evidence}
 
 
 async def response_node(state: AgentState) -> dict[str, Any]:
     await emit(state, "state", "response", "Generating grounded final response")
+
+    async def stream_token(token: str) -> None:
+        sink = state.get("event_sink")
+        if sink:
+            await sink(ActivityEvent(type="token", node="response", message=token))
+
     answer = await generate_answer(
-        state["question"], state.get("evidence", []), state.get("context", ""), state.get("analysis", "")
+        state["question"],
+        state.get("evidence", []),
+        state.get("context", ""),
+        state.get("analysis", ""),
+        stream_token if state.get("event_sink") else None,
     )
     return {"answer": answer}
 

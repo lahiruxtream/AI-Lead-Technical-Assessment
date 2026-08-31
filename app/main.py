@@ -141,9 +141,6 @@ async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSou
     async def execute() -> None:
         try:
             result = await asyncio.wait_for(run_agent(request, user, sink), timeout=45)
-            for token in result["answer"].split():
-                await queue.put(ActivityEvent(type="token", node="response", message=token + " "))
-                await asyncio.sleep(0.01)
             await queue.put(ActivityEvent(
                 type="final", node="response", message=result["answer"],
                 data={"citations": [item.model_dump() for item in result.get("evidence", [])],

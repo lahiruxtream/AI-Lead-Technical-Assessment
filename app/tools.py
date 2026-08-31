@@ -3,6 +3,9 @@ from collections import Counter
 from typing import Any
 
 import httpx
+from langsmith import traceable
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 
 from app.config import get_settings
 from app.models import Evidence, User
@@ -10,12 +13,14 @@ from app.retrieval import retriever
 from app.security import authorize_tool, sanitize_retrieved_text
 
 
+@traceable(name="knowledge-search-tool", run_type="tool")
 async def knowledge_search(query: str, user: User, filters: dict[str, str]) -> list[Evidence]:
     authorize_tool(user, "knowledge_search")
     evidence = await asyncio.wait_for(retriever.search(query, user, filters), timeout=8)
     return [item.model_copy(update={"text": sanitize_retrieved_text(item.text)}) for item in evidence]
 
 
+@traceable(name="python-analysis-tool", run_type="tool")
 async def python_analysis(evidence: list[Evidence], user: User) -> dict[str, Any]:
     """Safe predefined analytics; intentionally does not eval model-generated code."""
     authorize_tool(user, "python_analysis")
@@ -28,20 +33,32 @@ async def python_analysis(evidence: list[Evidence], user: User) -> dict[str, Any
     }
 
 
+@traceable(name="enterprise-mcp-tool", run_type="tool")
 async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
     authorize_tool(user, "enterprise_mcp")
     if resource not in {"employee_directory", "service_catalog", "incident_records"}:
         raise ValueError("Unsupported MCP resource")
+    settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=4) as client:
-            settings = get_settings()
-            response = await client.get(
-                f"{settings.mcp_url}/resources/{resource}",
-                headers={"X-MCP-Key": settings.mcp_shared_secret.get_secret_value()},
+        async with (
+            httpx.AsyncClient(
+            timeout=4,
+            headers={"X-MCP-Key": settings.mcp_shared_secret.get_secret_value()},
+        ) as client, streamable_http_client(
+                f"{settings.mcp_url.rstrip('/')}/mcp", http_client=client
+            ) as (read_stream, write_stream, _),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            result = await session.call_tool(
+                "get_enterprise_resource", {"resource": resource}
             )
-            response.raise_for_status()
-            return response.json()
-    except (TimeoutError, httpx.HTTPError):
+            if result.isError:
+                raise RuntimeError("MCP tool returned an error")
+            if result.structuredContent:
+                return result.structuredContent
+            raise RuntimeError("MCP tool returned no structured content")
+    except Exception:  # noqa: BLE001 - SDK/transport failures degrade to labelled local data
         fallback = {
             "employee_directory": {"payments_on_call": "Nimal Perera", "extension": "4421"},
             "service_catalog": {"payments-api": {"owner": "Payments Platform", "tier": 1}},

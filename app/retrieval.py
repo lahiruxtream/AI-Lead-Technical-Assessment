@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from langsmith import traceable
 from rank_bm25 import BM25Okapi
 
 from app.config import get_settings
@@ -54,6 +55,7 @@ class HybridRetriever:
             self._embeddings = [local_embedding(" ".join(tokens)) for tokens in corpus]
             self._loaded = True
 
+    @traceable(name="hybrid-retrieval", run_type="retriever")
     async def search(
         self, query: str, user: User, filters: dict[str, str] | None = None, top_k: int | None = None
     ) -> list[Evidence]:
@@ -62,13 +64,20 @@ class HybridRetriever:
         top_k = min(top_k or self.settings.retrieval_top_k, 20)
         query_tokens = tokenize(query)
         sparse = await asyncio.to_thread(self._bm25.get_scores, query_tokens)  # type: ignore[union-attr]
-        query_vector = await asyncio.to_thread(local_embedding, query)
-        dense = [max(0.0, cosine(query_vector, vector)) for vector in self._embeddings]
+        local_query_vector = await asyncio.to_thread(local_embedding, query)
+        dense = [max(0.0, cosine(local_query_vector, vector)) for vector in self._embeddings]
         # Pinecone is the managed dense-search path. Local vectors make the POC runnable offline.
         if self.settings.pinecone_api_key:
             try:
+                if not self.settings.openai_api_key:
+                    raise RuntimeError("OPENAI_API_KEY is required for Pinecone query embeddings")
+                from langchain_openai import OpenAIEmbeddings
                 from pinecone import Pinecone
 
+                query_vector = await OpenAIEmbeddings(
+                    model=self.settings.embedding_model,
+                    api_key=self.settings.openai_api_key,
+                ).aembed_query(query)
                 index = Pinecone(api_key=self.settings.pinecone_api_key).Index(
                     self.settings.pinecone_index
                 )
