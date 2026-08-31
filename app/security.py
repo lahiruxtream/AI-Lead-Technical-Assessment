@@ -43,6 +43,7 @@ def validate_prompt(text: str) -> None:
 
 def sanitize_retrieved_text(text: str) -> str:
     """Remove instruction-like lines from untrusted documents before model context assembly."""
+    # Scan line-by-line to preserve useful document evidence around a malicious instruction.
     safe_lines = []
     for line in text.splitlines():
         if any(re.search(pattern, line, re.IGNORECASE) for pattern in INJECTION_PATTERNS):
@@ -73,6 +74,7 @@ def filter_evidence(user: User, evidence: list[Evidence]) -> list[Evidence]:
 def validate_citations(answer: str, evidence: list[Evidence]) -> tuple[bool, list[str]]:
     """Detect document IDs in an answer that were not supplied as authorized evidence."""
 
+    # Compare model output against IDs from this request, never against the global corpus.
     cited = set(re.findall(r"\[([\w-]+)\]", answer))
     allowed = {item.document_id for item in evidence}
     invalid = sorted(cited - allowed)
@@ -98,11 +100,13 @@ class TokenBucketLimiter:
     def consume(self, user_id: str, cost: float = 1) -> None:
         """Consume quota or raise a graceful HTTP 429 with a retry hint."""
 
+        # Monotonic time is immune to wall-clock corrections that could corrupt refill math.
         now = time.monotonic()
         with self.lock:
             bucket = self.buckets.setdefault(
                 user_id, Bucket(float(self.settings.rate_limit_capacity), now)
             )
+            # Refill lazily on access instead of running one timer task per authenticated user.
             elapsed = now - bucket.updated_at
             bucket.tokens = min(
                 self.settings.rate_limit_capacity,

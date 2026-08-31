@@ -62,12 +62,14 @@ async def supervisor_node(state: AgentState) -> dict[str, Any]:
 
     await emit(state, "state", "supervisor", "Understanding intent and routing task")
     text = state["question"].lower()
+    # Deterministic routing keeps the POC explainable and avoids an extra classification LLM call.
     if any(word in text for word in ("who owns", "employee", "service catalog", "on call")):
         intent = "mcp"
     elif any(word in text for word in ("summarize all", "recurring", "compare", "trend", "root cause")):
         intent = "research"
     else:
         intent = "search"
+    # Ownership is checked inside memory.context; cross-user history can never enter the prompt.
     turns = await memory.context(state["session_id"], state["user"].username)
     context = "\n".join(f"User: {turn.question}\nAssistant: {turn.answer}" for turn in turns)
     await emit(state, "memory", "supervisor", f"Loaded {len(turns)} previous turns")
@@ -92,12 +94,14 @@ async def research_node(state: AgentState) -> dict[str, Any]:
     intent = state["intent"]
     evidence = state.get("evidence", [])
     if intent == "mcp":
+        # Authorization is repeated inside the MCP tool, not trusted to this routing decision.
         await emit(state, "tool", "research", "Calling enterprise MCP service", tool="enterprise_mcp")
         result = await enterprise_mcp("service_catalog", state["user"])
         return {"analysis": f"Enterprise service catalog result: {result}"}
     if intent != "research":
         return {"analysis": ""}
 
+    # Convert the natural-language request into a visible, bounded Python execution plan.
     year_match = re.search(r"\b(20\d{2})\b", state["question"])
     plan = {
         "strategy": "python-bounded-map-reduce",
@@ -107,6 +111,7 @@ async def research_node(state: AgentState) -> dict[str, Any]:
         "batch_size": 2,
         "max_depth": 1,
     }
+    # Targeting happens before partitioning so irrelevant evidence does not consume sub-agent work.
     if plan["document_type"]:
         evidence = [
             item for item in evidence if item.metadata.get("document_type") == plan["document_type"]
@@ -122,6 +127,7 @@ async def research_node(state: AgentState) -> dict[str, Any]:
         "Created bounded Python search and map-reduce plan",
         plan=plan,
     )
+    # Fixed-size partitions cap context growth and reduce one bad document's blast radius.
     batches = [evidence[index : index + 2] for index in range(0, len(evidence), 2)]
 
     @traceable(name="rlm-batch-subagent", run_type="chain")
@@ -138,6 +144,7 @@ async def research_node(state: AgentState) -> dict[str, Any]:
             causes.append(match.group(1).strip() if match else item.metadata.get("category", "unspecified"))
         return f"Batch {index + 1}: " + ", ".join(causes)
 
+    # Independent partitions run concurrently; aggregation waits until every bounded task finishes.
     findings = await asyncio.gather(*(analyze_batch(i, batch) for i, batch in enumerate(batches)))
     analysis = "; ".join(findings)
     if state["user"].role in {Role.ANALYST, Role.ADMIN}:
@@ -181,6 +188,7 @@ async def response_node(state: AgentState) -> dict[str, Any]:
 async def validation_node(state: AgentState) -> dict[str, Any]:
     """Block sensitive output and remove citations that lack retrieved provenance."""
 
+    # Validation is deterministic and runs after generation but before persistence or final delivery.
     valid, invalid = validate_citations(state["answer"], state.get("evidence", []))
     output_safe = validate_sensitive_output(state["answer"])
     if not output_safe:
@@ -219,6 +227,7 @@ def build_graph():
     graph.add_node("response", response_node)
     graph.add_node("validation", validation_node)
     graph.add_node("memory", memory_node)
+    # A fixed edge sequence guarantees guardrails precede every data/model/tool interaction.
     graph.add_edge(START, "guardrail")
     graph.add_edge("guardrail", "supervisor")
     graph.add_edge("supervisor", "retrieval")

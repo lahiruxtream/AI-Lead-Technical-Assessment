@@ -59,6 +59,7 @@ class HybridRetriever:
         async with self._lock:
             if self._loaded:
                 return
+            # Loading fixture documents once keeps request latency predictable for the local POC.
             self.documents = [json.loads(path.read_text(encoding="utf-8")) for path in self.data_dir.glob("*.json")]
             corpus = [tokenize(f"{doc['title']} {doc['content']}") for doc in self.documents]
             self._bm25 = BM25Okapi(corpus)
@@ -75,10 +76,12 @@ class HybridRetriever:
         filters = filters or {}
         top_k = min(top_k or self.settings.retrieval_top_k, 20)
         query_tokens = tokenize(query)
+        # BM25 is CPU/synchronous, so move it off the event loop used by concurrent API requests.
         sparse = await asyncio.to_thread(self._bm25.get_scores, query_tokens)  # type: ignore[union-attr]
         local_query_vector = await asyncio.to_thread(local_embedding, query)
         dense = [max(0.0, cosine(local_query_vector, vector)) for vector in self._embeddings]
         # Pinecone is the managed dense-search path. Local vectors make the POC runnable offline.
+        # Cloud dense retrieval is optional; local vectors preserve evaluator availability.
         if self.settings.pinecone_api_key:
             try:
                 if not self.settings.openai_api_key:
@@ -110,12 +113,14 @@ class HybridRetriever:
             except Exception as exc:
                 # A cloud outage degrades to the local dense index; the API remains available.
                 logger.warning("pinecone_query_failed_using_local_fallback", exc_info=exc)
+        # Normalize unlike score ranges before applying the documented hybrid weights.
         sparse_max = max(sparse, default=1) or 1
         dense_max = max(dense, default=1) or 1
 
         ranked: list[tuple[float, dict[str, Any]]] = []
         for index, doc in enumerate(self.documents):
             metadata = doc["metadata"]
+            # ACL filtering occurs before Evidence objects (and therefore model context) are created.
             if metadata.get("access_level", "internal") not in user.access_levels:
                 continue
             if any(str(metadata.get(key)) != str(value) for key, value in filters.items()):

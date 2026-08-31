@@ -29,6 +29,7 @@ structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
 )
 logger = structlog.get_logger()
+# FastAPI resolves this alias before entering an endpoint, so handlers only receive trusted users.
 AuthenticatedUser = Annotated[User, Depends(current_user)]
 settings = get_settings()
 
@@ -51,6 +52,7 @@ app = FastAPI(
     docs_url=None if settings.app_env == "production" else "/docs",
     redoc_url=None,
 )
+# Middleware order creates the HTTP trust boundary before requests reach business logic.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.trusted_hosts)
 if settings.app_env == "production":
     app.add_middleware(HTTPSRedirectMiddleware)
@@ -64,8 +66,10 @@ app.add_middleware(
 @app.middleware("http")
 async def security_boundary(request: Request, call_next):
     """Enforce request-size limits and consistent browser-facing security headers."""
+    # Correlation IDs connect API responses, structured logs, and operational investigations.
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))[:100]
     content_length = request.headers.get("content-length")
+    # Reject oversized bodies before JSON parsing to reduce memory and parser-abuse risk.
     if content_length and content_length.isdigit() and int(content_length) > settings.max_request_bytes:
         return JSONResponse(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
@@ -125,8 +129,10 @@ async def conversation(session_id: str, user: AuthenticatedUser) -> dict[str, ob
 async def chat(request: ChatRequest, user: AuthenticatedUser) -> ChatResponse:
     """Execute one bounded graph turn and return answer, evidence, trace, and activity."""
 
+    # Quota is consumed before expensive retrieval, model, or tool operations start.
     rate_limiter.consume(user.username)
     try:
+        # A hard deadline contains failures across the entire multi-agent graph.
         result = await asyncio.wait_for(run_agent(request, user), timeout=45)
         return ChatResponse(
             answer=result["answer"], session_id=request.session_id,
@@ -147,6 +153,7 @@ async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSou
     """Stream graph lifecycle events and model tokens over Server-Sent Events."""
 
     rate_limiter.consume(user.username)
+    # The queue decouples graph execution from the network client's reading speed.
     queue: asyncio.Queue[ActivityEvent | None] = asyncio.Queue()
 
     async def sink(event: ActivityEvent) -> None:
@@ -158,6 +165,7 @@ async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSou
         """Run the graph in the background and guarantee an end-of-stream sentinel."""
 
         try:
+            # Nodes publish activity and token events through ``sink`` while this task runs.
             result = await asyncio.wait_for(run_agent(request, user, sink), timeout=45)
             await queue.put(ActivityEvent(
                 type="final", node="response", message=result["answer"],
@@ -174,11 +182,13 @@ async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSou
                 ActivityEvent(type="error", node="system", message="Assistant temporarily unavailable")
             )
         finally:
+            # ``None`` is an internal sentinel and is never serialized to the client.
             await queue.put(None)
 
     async def events():
         """Serialize typed activity objects into SSE event/data frames."""
 
+        # Run the producer concurrently while this async generator drains events as SSE frames.
         task = asyncio.create_task(execute())
         while (event := await queue.get()) is not None:
             yield {"event": event.type, "data": json.dumps(event.model_dump())}

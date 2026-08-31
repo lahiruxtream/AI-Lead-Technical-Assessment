@@ -83,6 +83,7 @@ class SessionMemory:
         now = datetime.now(UTC).isoformat()
         title = question.strip().replace("\n", " ")[:60] or "New conversation"
         async with aiosqlite.connect(self.db_path) as db:
+            # Upsert updates only when the existing row belongs to the same authenticated user.
             await db.execute(
                 """INSERT INTO conversations(session_id, username, title, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?)
@@ -93,6 +94,7 @@ class SessionMemory:
             cursor = await db.execute(
                 "SELECT username FROM conversations WHERE session_id = ?", (session_id,)
             )
+            # Verify ownership again before inserting a turn to handle session-ID collisions safely.
             owner = await cursor.fetchone()
             if not owner or owner[0] != username:
                 raise PermissionError("Conversation belongs to another user")
@@ -144,6 +146,7 @@ class SessionMemory:
         """Persist quality feedback only when the user owns the conversation."""
         now = datetime.now(UTC).isoformat()
         async with aiosqlite.connect(self.db_path) as db:
+            # Returning one generic not-found result avoids revealing another user's session IDs.
             cursor = await db.execute(
                 "SELECT 1 FROM conversations WHERE session_id = ? AND username = ?",
                 (session_id, username),

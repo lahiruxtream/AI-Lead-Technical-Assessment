@@ -27,6 +27,7 @@ _PBKDF2_ITERATIONS = 600_000
 
 def _hash(password: str, username: str) -> str:
     """Slow, salted password derivation suitable for the assessment's local accounts."""
+    # Username-derived salts make identical demo passwords produce different stored values.
     return hashlib.pbkdf2_hmac(
         "sha256", password.encode(), f"enterprise-assistant:{username}".encode(), _PBKDF2_ITERATIONS
     ).hex()
@@ -61,6 +62,7 @@ async def current_user(
 
     record = USERS.get(credentials.username)
     # Always derive and compare a hash so unknown usernames do not create an obvious timing oracle.
+    # Unknown users still perform the same expensive derivation to reduce username timing leaks.
     expected = record.password_hash if record else "0" * 64
     supplied = _hash(credentials.password, credentials.username)
     valid = record is not None and secrets.compare_digest(expected, supplied)

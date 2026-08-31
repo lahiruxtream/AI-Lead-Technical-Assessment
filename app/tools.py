@@ -19,8 +19,10 @@ from app.security import authorize_tool, sanitize_retrieved_text
 async def knowledge_search(query: str, user: User, filters: dict[str, str]) -> list[Evidence]:
     """Run bounded retrieval and sanitize untrusted document instructions."""
 
+    # Tool-local authorization prevents a compromised/incorrect agent route from bypassing RBAC.
     authorize_tool(user, "knowledge_search")
     evidence = await asyncio.wait_for(retriever.search(query, user, filters), timeout=8)
+    # Copy rather than mutate retriever state shared by concurrent requests.
     return [item.model_copy(update={"text": sanitize_retrieved_text(item.text)}) for item in evidence]
 
 
@@ -29,6 +31,7 @@ async def python_analysis(evidence: list[Evidence], user: User) -> dict[str, Any
     """Safe predefined analytics; intentionally does not eval model-generated code."""
     authorize_tool(user, "python_analysis")
     await asyncio.sleep(0)
+    # Only predefined aggregation runs here; model-generated code is never evaluated.
     return {
         "documents": len(evidence),
         "by_type": dict(Counter(item.metadata.get("document_type", "unknown") for item in evidence)),
@@ -42,15 +45,18 @@ async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
     """Call the authenticated MCP server or return an explicitly labelled fallback."""
 
     authorize_tool(user, "enterprise_mcp")
+    # The allowlist blocks arbitrary MCP resource discovery and server-side URL construction.
     if resource not in {"employee_directory", "service_catalog", "incident_records"}:
         raise ValueError("Unsupported MCP resource")
     settings = get_settings()
     try:
+        # Initialize a standards-compliant MCP session over authenticated Streamable HTTP.
         async with (
             httpx.AsyncClient(
-            timeout=4,
-            headers={"X-MCP-Key": settings.mcp_shared_secret.get_secret_value()},
-        ) as client, streamable_http_client(
+                timeout=4,
+                headers={"X-MCP-Key": settings.mcp_shared_secret.get_secret_value()},
+            ) as client,
+            streamable_http_client(
                 f"{settings.mcp_url.rstrip('/')}/mcp", http_client=client
             ) as (read_stream, write_stream, _),
             ClientSession(read_stream, write_stream) as session,
@@ -65,6 +71,7 @@ async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
                 return result.structuredContent
             raise RuntimeError("MCP tool returned no structured content")
     except Exception:  # noqa: BLE001 - SDK/transport failures degrade to labelled local data
+        # The fallback is synthetic and explicitly labelled so it cannot be mistaken for live data.
         fallback = {
             "employee_directory": {"payments_on_call": "Nimal Perera", "extension": "4421"},
             "service_catalog": {"payments-api": {"owner": "Payments Platform", "tier": 1}},

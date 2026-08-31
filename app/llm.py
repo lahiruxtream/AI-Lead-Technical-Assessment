@@ -26,6 +26,7 @@ async def generate_answer(
     sources = "\n\n".join(
         f"SOURCE [{item.document_id}] {item.title}\n{item.text}" for item in evidence
     )
+    # Cloud generation activates only when explicitly configured; tests never require credentials.
     if settings.openai_api_key:
         from langchain_openai import ChatOpenAI
 
@@ -35,6 +36,7 @@ async def generate_answer(
             f"Analysis:\n{analysis}\n\nEvidence:\n{sources}\n\nQuestion: {question}"
         )
         chunks: list[str] = []
+        # Forward provider chunks immediately so SSE clients see genuine generation progress.
         async for chunk in model.astream(prompt):
             content = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
             chunks.append(content)
@@ -42,6 +44,7 @@ async def generate_answer(
                 await token_sink(content)
         return "".join(chunks)
 
+    # The extractive branch keeps the POC grounded and demonstrable during provider outages/setup.
     if not evidence:
         answer = "I could not find authorized evidence for this question. Please refine the query or contact the knowledge administrator."
     else:
