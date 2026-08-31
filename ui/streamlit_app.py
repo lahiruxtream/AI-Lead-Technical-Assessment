@@ -11,32 +11,71 @@ st.set_page_config(page_title="Commercial Bank Knowledge AI", page_icon="🏦", 
 st.title("🏦 Commercial Bank Knowledge Assistant")
 st.caption("Grounded enterprise answers with transparent agent activity")
 
+api_url = os.getenv("API_URL", "http://localhost:8000")
+role_descriptions = {
+    "viewer": "Search and chat",
+    "analyst": "Search, analytics, and MCP tools",
+    "admin": "All tools and confidential evidence",
+}
+
+# Render a real credential form before creating or displaying any conversation state.
+if not st.session_state.get("authenticated"):
+    login_left, login_center, login_right = st.columns([1, 1.3, 1])
+    with login_center:
+        st.subheader("Sign in")
+        st.caption("Use your enterprise demo account to continue.")
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("Username", placeholder="viewer, analyst, or admin")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Sign in", use_container_width=True)
+        if submitted:
+            try:
+                # A protected endpoint verifies credentials; the UI never decides the user's role.
+                response = httpx.get(
+                    f"{api_url}/v1/conversations",
+                    auth=(username.strip(), password),
+                    timeout=5,
+                )
+                response.raise_for_status()
+                if username.strip() not in role_descriptions:
+                    raise ValueError("Unsupported demo account")
+                st.session_state.authenticated = True
+                st.session_state.auth_username = username.strip()
+                st.session_state.auth_password = password
+                st.session_state.messages = []
+                st.session_state.session_id = str(uuid.uuid4())
+                st.rerun()
+            except (httpx.HTTPError, ValueError):
+                st.error("Invalid username or password, or the API is unavailable.")
+        with st.expander("Demo credentials"):
+            st.code("viewer / viewer123\nanalyst / analyst123\nadmin / admin123")
+    st.stop()
+
+# These values exist only after the backend has accepted the credentials.
+role = st.session_state.auth_username
+auth = (role, st.session_state.auth_password)
+
 if "messages" not in st.session_state:
     # Streamlit reruns this module on interaction, so durable UI state lives in session_state.
     st.session_state.messages = []
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-api_url = os.getenv("API_URL", "http://localhost:8000")
-passwords = {
-    "viewer": os.getenv("VIEWER_PASSWORD", "viewer123"),
-    "analyst": os.getenv("ANALYST_PASSWORD", "analyst123"),
-    "admin": os.getenv("ADMIN_PASSWORD", "admin123"),
-}
-
 with st.sidebar:
-    # Role selection intentionally uses assessment accounts; the API remains authoritative.
-    st.header("Demo access")
-    role = st.selectbox("Role", ["viewer", "analyst", "admin"])
-    if st.session_state.get("loaded_role") != role:
-        st.session_state.loaded_role = role
-        st.session_state.messages = []
-        st.session_state.session_id = str(uuid.uuid4())
-    st.info({
-        "viewer": "Search and chat",
-        "analyst": "Search, analytics, MCP",
-        "admin": "All tools",
-    }[role])
+    st.header("Signed in")
+    st.write(f"**{role}**")
+    st.info(role_descriptions[role])
+    if st.button("Sign out", use_container_width=True):
+        # Remove credentials and user-specific UI state before returning to the login page.
+        for key in (
+            "authenticated",
+            "auth_username",
+            "auth_password",
+            "messages",
+            "session_id",
+        ):
+            st.session_state.pop(key, None)
+        st.rerun()
     department = st.selectbox("Department filter", ["All", "payments", "platform", "security"])
     if st.button("New conversation", use_container_width=True):
         st.session_state.messages = []
@@ -47,7 +86,7 @@ with st.sidebar:
     st.subheader("Conversation history")
     try:
         history_response = httpx.get(
-            f"{api_url}/v1/conversations", auth=(role, passwords[role]), timeout=5
+            f"{api_url}/v1/conversations", auth=auth, timeout=5
         )
         history_response.raise_for_status()
         conversations = history_response.json()
@@ -66,7 +105,7 @@ with st.sidebar:
             if selected and selected != st.session_state.session_id:
                 saved = httpx.get(
                     f"{api_url}/v1/conversations/{selected}",
-                    auth=(role, passwords[role]), timeout=5,
+                    auth=auth, timeout=5,
                 )
                 saved.raise_for_status()
                 st.session_state.session_id = selected
@@ -91,7 +130,7 @@ with st.sidebar:
                         "rating": 1 if rating_label == "Helpful" else -1,
                         "comment": feedback_comment,
                     },
-                    auth=(role, passwords[role]),
+                    auth=auth,
                     timeout=5,
                 )
                 result.raise_for_status()
@@ -132,7 +171,7 @@ if prompt:
             httpx.Client(timeout=60) as client,
             client.stream(
                 "POST", f"{api_url}/v1/chat/stream", json=payload,
-                auth=(role, passwords[role]),
+                auth=auth,
             ) as response,
         ):
                 response.raise_for_status()
