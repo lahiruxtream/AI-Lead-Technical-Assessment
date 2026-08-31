@@ -1,3 +1,5 @@
+"""Typed environment configuration shared by the API, UI integrations, and tools."""
+
 from functools import lru_cache
 
 from pydantic import SecretStr, model_validator
@@ -5,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Validate runtime settings and keep credentials masked through ``SecretStr``."""
+
     app_env: str = "development"
     log_level: str = "INFO"
     openai_api_key: str = ""
@@ -31,14 +35,20 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
+        """Convert the comma-separated environment value into exact allowed origins."""
+
         return [item.strip() for item in self.allowed_origins.split(",") if item.strip()]
 
     @property
     def trusted_hosts(self) -> list[str]:
+        """Return hosts accepted by Starlette's host-header attack protection."""
+
         return [item.strip() for item in self.allowed_hosts.split(",") if item.strip()]
 
     @model_validator(mode="after")
     def reject_insecure_production_defaults(self) -> "Settings":
+        """Fail closed when known demo credentials are used in production mode."""
+
         if self.app_env != "production":
             return self
         forbidden = {
@@ -61,4 +71,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Build settings once so every component observes a consistent configuration."""
+
     return Settings()

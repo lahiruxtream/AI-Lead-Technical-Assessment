@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 WORKDIR /workspace
+# Copy dependency metadata before application code to maximize Docker layer reuse.
 COPY pyproject.toml README.md ./
 COPY app ./app
 COPY data ./data
@@ -7,6 +8,7 @@ COPY scripts ./scripts
 COPY ui ./ui
 RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
     && python -m pip install --no-cache-dir .
+# Drop root privileges; only the mounted runtime database directory remains writable.
 RUN groupadd --system app && useradd --system --gid app --home-dir /nonexistent app \
     && mkdir -p /workspace/data/runtime \
     && chown -R app:app /workspace/data/runtime

@@ -1,3 +1,5 @@
+"""FastAPI entry point exposing secure synchronous and SSE conversational APIs."""
+
 import asyncio
 import json
 import logging
@@ -33,6 +35,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """Initialize durable memory and retrieval indexes around application lifetime."""
+
     await memory.initialize()
     await retriever.load()
     await logger.ainfo("application_started", documents=len(retriever.documents))
@@ -93,17 +97,23 @@ async def security_boundary(request: Request, call_next):
 
 @app.get("/health")
 async def health() -> dict[str, object]:
+    """Return a credential-free liveness signal and loaded document count."""
+
     return {"status": "healthy", "documents": len(retriever.documents)}
 
 
 @app.get("/v1/conversations")
 async def conversations(user: AuthenticatedUser) -> list[dict[str, str]]:
+    """List rate-limited conversation metadata owned by the caller."""
+
     rate_limiter.consume(user.username, cost=0.25)
     return await memory.list_sessions(user.username)
 
 
 @app.get("/v1/conversations/{session_id}")
 async def conversation(session_id: str, user: AuthenticatedUser) -> dict[str, object]:
+    """Restore one owned conversation without disclosing whether another user owns it."""
+
     rate_limiter.consume(user.username, cost=0.25)
     messages = await memory.messages(session_id, user.username)
     if not messages:
@@ -113,6 +123,8 @@ async def conversation(session_id: str, user: AuthenticatedUser) -> dict[str, ob
 
 @app.post("/v1/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest, user: AuthenticatedUser) -> ChatResponse:
+    """Execute one bounded graph turn and return answer, evidence, trace, and activity."""
+
     rate_limiter.consume(user.username)
     try:
         result = await asyncio.wait_for(run_agent(request, user), timeout=45)
@@ -132,13 +144,19 @@ async def chat(request: ChatRequest, user: AuthenticatedUser) -> ChatResponse:
 
 @app.post("/v1/chat/stream")
 async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSourceResponse:
+    """Stream graph lifecycle events and model tokens over Server-Sent Events."""
+
     rate_limiter.consume(user.username)
     queue: asyncio.Queue[ActivityEvent | None] = asyncio.Queue()
 
     async def sink(event: ActivityEvent) -> None:
+        """Apply queue backpressure between the graph task and HTTP stream."""
+
         await queue.put(event)
 
     async def execute() -> None:
+        """Run the graph in the background and guarantee an end-of-stream sentinel."""
+
         try:
             result = await asyncio.wait_for(run_agent(request, user, sink), timeout=45)
             await queue.put(ActivityEvent(
@@ -159,6 +177,8 @@ async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSou
             await queue.put(None)
 
     async def events():
+        """Serialize typed activity objects into SSE event/data frames."""
+
         task = asyncio.create_task(execute())
         while (event := await queue.get()) is not None:
             yield {"event": event.type, "data": json.dumps(event.model_dump())}

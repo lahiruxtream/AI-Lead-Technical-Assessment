@@ -1,3 +1,5 @@
+"""MCP transport authentication and enterprise resource allowlist tests."""
+
 import pytest
 from fastapi.testclient import TestClient
 

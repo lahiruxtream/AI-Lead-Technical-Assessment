@@ -1,3 +1,5 @@
+"""API boundary tests for health, authentication, validation, and request limits."""
+
 from fastapi.testclient import TestClient
 
 from app.main import app

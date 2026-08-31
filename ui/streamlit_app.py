@@ -1,3 +1,5 @@
+"""Streamlit chat client with conversation history and transparent agent activity."""
+
 import json
 import os
 import uuid
@@ -10,6 +12,7 @@ st.title("🏦 Commercial Bank Knowledge Assistant")
 st.caption("Grounded enterprise answers with transparent agent activity")
 
 if "messages" not in st.session_state:
+    # Streamlit reruns this module on interaction, so durable UI state lives in session_state.
     st.session_state.messages = []
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
@@ -22,6 +25,7 @@ passwords = {
 }
 
 with st.sidebar:
+    # Role selection intentionally uses assessment accounts; the API remains authoritative.
     st.header("Demo access")
     role = st.selectbox("Role", ["viewer", "analyst", "admin"])
     if st.session_state.get("loaded_role") != role:
@@ -108,6 +112,7 @@ with chat_col:
 
 prompt = st.chat_input("Ask about policies, architecture, runbooks, incidents, or products…")
 if prompt:
+    # The UI consumes named SSE events so operational activity and answer tokens stay separate.
     st.session_state.messages.append({"role": "user", "content": prompt})
     with chat_col, st.chat_message("user"):
         st.markdown(prompt)

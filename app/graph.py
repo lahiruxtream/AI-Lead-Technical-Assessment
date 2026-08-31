@@ -1,3 +1,5 @@
+"""LangGraph orchestration for guarded retrieval, recursive research, and response flow."""
+
 import asyncio
 import json
 import re
@@ -18,6 +20,8 @@ EventSink = Callable[[ActivityEvent], Awaitable[None]]
 
 
 class AgentState(TypedDict, total=False):
+    """Shared typed state passed between specialized graph nodes."""
+
     question: str
     session_id: str
     user: User
@@ -35,6 +39,8 @@ class AgentState(TypedDict, total=False):
 
 
 async def emit(state: AgentState, event_type: str, node: str, message: str, **data: Any) -> None:
+    """Record an activity and immediately forward it to an optional SSE event sink."""
+
     event = ActivityEvent(type=event_type, node=node, message=message, data=data)
     state.setdefault("activities", []).append(event)
     sink = state.get("event_sink")
@@ -43,6 +49,8 @@ async def emit(state: AgentState, event_type: str, node: str, message: str, **da
 
 
 async def guardrail_node(state: AgentState) -> dict[str, Any]:
+    """Reject malicious input before memory, retrieval, models, or tools are invoked."""
+
     await emit(state, "state", "guardrail", "Validating user request")
     validate_prompt(state["question"])
     await emit(state, "validation", "guardrail", "Input validation passed")
@@ -50,6 +58,8 @@ async def guardrail_node(state: AgentState) -> dict[str, Any]:
 
 
 async def supervisor_node(state: AgentState) -> dict[str, Any]:
+    """Classify intent and load bounded, user-isolated conversational context."""
+
     await emit(state, "state", "supervisor", "Understanding intent and routing task")
     text = state["question"].lower()
     if any(word in text for word in ("who owns", "employee", "service catalog", "on call")):
@@ -65,6 +75,8 @@ async def supervisor_node(state: AgentState) -> dict[str, Any]:
 
 
 async def retrieval_node(state: AgentState) -> dict[str, Any]:
+    """Invoke authorized hybrid retrieval and expose provenance through activity events."""
+
     await emit(state, "tool", "retrieval", "Executing hybrid knowledge search", tool="knowledge_search")
     evidence = await knowledge_search(state["question"], state["user"], state.get("filters", {}))
     await emit(
@@ -75,6 +87,8 @@ async def retrieval_node(state: AgentState) -> dict[str, Any]:
 
 
 async def research_node(state: AgentState) -> dict[str, Any]:
+    """Execute MCP routing or a bounded RLM-style map-reduce investigation."""
+
     intent = state["intent"]
     evidence = state.get("evidence", [])
     if intent == "mcp":
@@ -112,6 +126,8 @@ async def research_node(state: AgentState) -> dict[str, Any]:
 
     @traceable(name="rlm-batch-subagent", run_type="chain")
     async def analyze_batch(index: int, batch: list[Evidence]) -> str:
+        """Act as one bounded sub-agent over an isolated evidence partition."""
+
         await emit(
             state, "tool", "research", f"Analyzing recursive batch {index + 1}/{len(batches)}",
             documents=[item.document_id for item in batch], depth=1,
@@ -141,9 +157,13 @@ async def research_node(state: AgentState) -> dict[str, Any]:
 
 
 async def response_node(state: AgentState) -> dict[str, Any]:
+    """Generate a grounded answer while forwarding model tokens to streaming clients."""
+
     await emit(state, "state", "response", "Generating grounded final response")
 
     async def stream_token(token: str) -> None:
+        """Forward tokens without retaining every token in persistent activity history."""
+
         sink = state.get("event_sink")
         if sink:
             await sink(ActivityEvent(type="token", node="response", message=token))
@@ -159,6 +179,8 @@ async def response_node(state: AgentState) -> dict[str, Any]:
 
 
 async def validation_node(state: AgentState) -> dict[str, Any]:
+    """Block sensitive output and remove citations that lack retrieved provenance."""
+
     valid, invalid = validate_citations(state["answer"], state.get("evidence", []))
     output_safe = validate_sensitive_output(state["answer"])
     if not output_safe:
@@ -175,6 +197,8 @@ async def validation_node(state: AgentState) -> dict[str, Any]:
 
 
 async def memory_node(state: AgentState) -> dict[str, Any]:
+    """Persist the completed, validated turn only after all safety checks pass."""
+
     citations = [item.model_dump() for item in state.get("evidence", [])]
     await memory.add(
         state["session_id"], state["user"].username, state["question"], state["answer"],
@@ -185,6 +209,8 @@ async def memory_node(state: AgentState) -> dict[str, Any]:
 
 
 def build_graph():
+    """Compile the deterministic specialized-agent topology used by every request."""
+
     graph = StateGraph(AgentState)
     graph.add_node("guardrail", guardrail_node)
     graph.add_node("supervisor", supervisor_node)
@@ -208,6 +234,8 @@ agent_graph = build_graph()
 
 
 async def run_agent(request: Any, user: User, sink: EventSink | None = None) -> AgentState:
+    """Create isolated request state and asynchronously execute one traced graph run."""
+
     state: AgentState = {
         "question": request.message,
         "session_id": request.session_id,

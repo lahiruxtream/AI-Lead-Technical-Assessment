@@ -1,3 +1,5 @@
+"""SQLite persistence, conversation ownership, and feedback isolation tests."""
+
 import pytest
 
 from app.memory import SessionMemory

@@ -1,3 +1,5 @@
+"""Unit tests for injection, RBAC, evidence, citation, and output controls."""
+
 import pytest
 from fastapi import HTTPException
 

@@ -1,3 +1,5 @@
+"""Grounded answer generation with OpenAI streaming and an offline extractive fallback."""
+
 from collections.abc import Awaitable, Callable
 
 from app.config import get_settings
@@ -18,6 +20,8 @@ async def generate_answer(
     analysis: str,
     token_sink: TokenSink | None = None,
 ) -> str:
+    """Generate only from authorized evidence and optionally stream each output chunk."""
+
     settings = get_settings()
     sources = "\n\n".join(
         f"SOURCE [{item.document_id}] {item.title}\n{item.text}" for item in evidence

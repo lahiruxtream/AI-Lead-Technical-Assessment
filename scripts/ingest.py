@@ -6,6 +6,8 @@ from app.config import get_settings
 
 
 def main() -> None:
+    """Validate document metadata and optionally upsert semantic vectors to Pinecone."""
+
     settings = get_settings()
     documents = [json.loads(path.read_text(encoding="utf-8")) for path in Path("data/documents").glob("*.json")]
     required = {"department", "document_type", "access_level", "created_date"}

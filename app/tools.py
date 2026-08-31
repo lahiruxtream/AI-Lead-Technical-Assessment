@@ -1,3 +1,5 @@
+"""RBAC-protected knowledge, analytics, and enterprise MCP tool implementations."""
+
 import asyncio
 from collections import Counter
 from typing import Any
@@ -15,6 +17,8 @@ from app.security import authorize_tool, sanitize_retrieved_text
 
 @traceable(name="knowledge-search-tool", run_type="tool")
 async def knowledge_search(query: str, user: User, filters: dict[str, str]) -> list[Evidence]:
+    """Run bounded retrieval and sanitize untrusted document instructions."""
+
     authorize_tool(user, "knowledge_search")
     evidence = await asyncio.wait_for(retriever.search(query, user, filters), timeout=8)
     return [item.model_copy(update={"text": sanitize_retrieved_text(item.text)}) for item in evidence]
@@ -35,6 +39,8 @@ async def python_analysis(evidence: list[Evidence], user: User) -> dict[str, Any
 
 @traceable(name="enterprise-mcp-tool", run_type="tool")
 async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
+    """Call the authenticated MCP server or return an explicitly labelled fallback."""
+
     authorize_tool(user, "enterprise_mcp")
     if resource not in {"employee_directory", "service_catalog", "incident_records"}:
         raise ValueError("Unsupported MCP resource")

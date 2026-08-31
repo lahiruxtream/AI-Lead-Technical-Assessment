@@ -1,3 +1,5 @@
+"""Hybrid relevance, access control, and metadata filtering tests."""
+
 import pytest
 
 from app.models import Role, User

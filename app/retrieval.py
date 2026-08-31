@@ -1,3 +1,5 @@
+"""Async hybrid retrieval with BM25, dense vectors, ACL filters, and Pinecone fallback."""
+
 import asyncio
 import hashlib
 import json
@@ -17,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
+    """Create stable lowercase terms for BM25 and the deterministic local vectorizer."""
+
     return re.findall(r"[a-z0-9]+", text.lower())
 
 
@@ -32,10 +36,14 @@ def local_embedding(text: str, dimensions: int = 256) -> list[float]:
 
 
 def cosine(left: list[float], right: list[float]) -> float:
+    """Calculate cosine similarity for vectors already normalized to unit length."""
+
     return sum(a * b for a, b in zip(left, right))
 
 
 class HybridRetriever:
+    """Load document fixtures once and serve authorized weighted hybrid searches."""
+
     def __init__(self, data_dir: Path | None = None) -> None:
         self.settings = get_settings()
         self.data_dir = data_dir or Path("data/documents")
@@ -46,6 +54,8 @@ class HybridRetriever:
         self._lock = asyncio.Lock()
 
     async def load(self) -> None:
+        """Build local sparse and dense indexes exactly once under an async lock."""
+
         async with self._lock:
             if self._loaded:
                 return
@@ -59,6 +69,8 @@ class HybridRetriever:
     async def search(
         self, query: str, user: User, filters: dict[str, str] | None = None, top_k: int | None = None
     ) -> list[Evidence]:
+        """Retrieve, ACL-filter, fuse, rank, and attribute evidence for one query."""
+
         await self.load()
         filters = filters or {}
         top_k = min(top_k or self.settings.retrieval_top_k, 20)

@@ -1,3 +1,5 @@
+"""Authenticated, read-only MCP Streamable HTTP server for synthetic enterprise data."""
+
 import secrets
 from collections.abc import Callable
 from typing import Any
@@ -37,9 +39,13 @@ class SharedSecretMiddleware:
     """Protect MCP HTTP transport with an internal shared secret."""
 
     def __init__(self, wrapped_app: Callable[..., Any]) -> None:
+        """Wrap an ASGI MCP application with shared-secret authentication."""
+
         self.wrapped_app = wrapped_app
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        """Reject unauthenticated HTTP scopes while forwarding lifespan and valid traffic."""
+
         if scope["type"] == "http":
             headers = {key.lower(): value for key, value in scope.get("headers", [])}
             supplied = headers.get(b"x-mcp-key", b"").decode(errors="ignore")

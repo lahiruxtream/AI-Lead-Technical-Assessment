@@ -1,3 +1,5 @@
+"""Persistent, user-isolated conversation and answer-quality feedback storage."""
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +11,8 @@ from app.config import get_settings
 
 @dataclass
 class Turn:
+    """Minimal historical turn supplied to the model's bounded context window."""
+
     question: str
     answer: str
 
@@ -20,6 +24,8 @@ class SessionMemory:
         self.db_path = Path(get_settings().memory_db_path)
 
     async def initialize(self) -> None:
+        """Create idempotent SQLite schema and lookup indexes at application startup."""
+
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self.db_path) as db:
             await db.executescript(
@@ -56,6 +62,8 @@ class SessionMemory:
             await db.commit()
 
     async def context(self, session_id: str, username: str, limit: int = 4) -> list[Turn]:
+        """Return the latest owned turns in chronological order for prompt context."""
+
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """SELECT t.question, t.answer FROM turns t
@@ -70,6 +78,8 @@ class SessionMemory:
     async def add(
         self, session_id: str, username: str, question: str, answer: str, citations_json: str = "[]"
     ) -> None:
+        """Persist a turn after atomically verifying conversation ownership."""
+
         now = datetime.now(UTC).isoformat()
         title = question.strip().replace("\n", " ")[:60] or "New conversation"
         async with aiosqlite.connect(self.db_path) as db:
@@ -94,6 +104,8 @@ class SessionMemory:
             await db.commit()
 
     async def list_sessions(self, username: str, limit: int = 50) -> list[dict[str, str]]:
+        """List only conversations owned by the authenticated user."""
+
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
@@ -104,6 +116,8 @@ class SessionMemory:
             return [dict(row) for row in await cursor.fetchall()]
 
     async def messages(self, session_id: str, username: str) -> list[dict[str, object]]:
+        """Restore an owned conversation as UI-compatible chat messages."""
+
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """SELECT t.question, t.answer, t.citations_json FROM turns t

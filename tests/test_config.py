@@ -1,3 +1,5 @@
+"""Configuration safety tests for production fail-closed behavior."""
+
 import pytest
 from pydantic import ValidationError
 

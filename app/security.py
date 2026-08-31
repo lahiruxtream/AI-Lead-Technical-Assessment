@@ -1,3 +1,5 @@
+"""Deterministic security controls for prompts, tools, evidence, outputs, and quotas."""
+
 import re
 import time
 from dataclasses import dataclass
@@ -30,6 +32,8 @@ TOOL_PERMISSIONS = {
 
 
 def validate_prompt(text: str) -> None:
+    """Reject common instruction override, exfiltration, and authorization bypass requests."""
+
     if any(re.search(pattern, text, re.IGNORECASE) for pattern in INJECTION_PATTERNS):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,15 +58,21 @@ def validate_sensitive_output(text: str) -> bool:
 
 
 def authorize_tool(user: User, tool: str) -> None:
+    """Enforce RBAC at the tool boundary, independently of model-generated decisions."""
+
     if user.role not in TOOL_PERMISSIONS.get(tool, set()):
         raise HTTPException(status_code=403, detail=f"Role '{user.role}' cannot use {tool}")
 
 
 def filter_evidence(user: User, evidence: list[Evidence]) -> list[Evidence]:
+    """Remove evidence above the caller's access level before it reaches an LLM."""
+
     return [item for item in evidence if item.metadata.get("access_level", "internal") in user.access_levels]
 
 
 def validate_citations(answer: str, evidence: list[Evidence]) -> tuple[bool, list[str]]:
+    """Detect document IDs in an answer that were not supplied as authorized evidence."""
+
     cited = set(re.findall(r"\[([\w-]+)\]", answer))
     allowed = {item.document_id for item in evidence}
     invalid = sorted(cited - allowed)
@@ -71,17 +81,23 @@ def validate_citations(answer: str, evidence: list[Evidence]) -> tuple[bool, lis
 
 @dataclass
 class Bucket:
+    """Mutable token balance and monotonic timestamp for one user."""
+
     tokens: float
     updated_at: float
 
 
 class TokenBucketLimiter:
+    """Thread-safe, per-user token bucket with configurable refill behavior."""
+
     def __init__(self) -> None:
         self.settings = get_settings()
         self.buckets: dict[str, Bucket] = {}
         self.lock = Lock()
 
     def consume(self, user_id: str, cost: float = 1) -> None:
+        """Consume quota or raise a graceful HTTP 429 with a retry hint."""
+
         now = time.monotonic()
         with self.lock:
             bucket = self.buckets.setdefault(

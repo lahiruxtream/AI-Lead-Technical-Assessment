@@ -4,6 +4,7 @@ services:
     env_file: .env
     ports: ["8000:8000"]
     volumes: ["conversation_data:/workspace/data/runtime"]
+    # Immutable root filesystems limit persistence after a container compromise.
     read_only: true
     tmpfs: ["/tmp"]
     security_opt: ["no-new-privileges:true"]
@@ -27,6 +28,7 @@ services:
     build: .
     command: ["python", "-m", "app.mcp_server"]
     environment: ["MCP_BIND_HOST=0.0.0.0"]
+    # Expose MCP only to the Compose network; no host port is published.
     expose: ["8010"]
     read_only: true
     tmpfs: ["/tmp"]

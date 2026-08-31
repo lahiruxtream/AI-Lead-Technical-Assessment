@@ -1,3 +1,5 @@
+"""HTTP Basic authentication and local role assignment for assessment users."""
+
 import hashlib
 import secrets
 from dataclasses import dataclass
@@ -14,6 +16,8 @@ security = HTTPBasic()
 
 @dataclass(frozen=True)
 class UserRecord:
+    """Bind a stored password derivation to its immutable domain user."""
+
     password_hash: str
     user: User
 
@@ -53,6 +57,8 @@ USERS = {
 async def current_user(
     credentials: Annotated[HTTPBasicCredentials, Depends(security)],
 ) -> User:
+    """Authenticate one request and return the trusted user/role security principal."""
+
     record = USERS.get(credentials.username)
     # Always derive and compare a hash so unknown usernames do not create an obvious timing oracle.
     expected = record.password_hash if record else "0" * 64

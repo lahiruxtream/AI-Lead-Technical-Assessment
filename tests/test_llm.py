@@ -1,3 +1,5 @@
+"""Grounded generation tests covering the credential-free streaming fallback."""
+
 import pytest
 
 from app.llm import generate_answer
