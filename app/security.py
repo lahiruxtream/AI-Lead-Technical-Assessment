@@ -15,6 +15,12 @@ INJECTION_PATTERNS = [
     r"bypass (?:authorization|rbac|security)",
 ]
 
+SENSITIVE_OUTPUT_PATTERNS = [
+    r"\b(?:api[_ -]?key|client[_ -]?secret|password)\s*[:=]\s*\S+",
+    r"\bsk-[A-Za-z0-9_-]{16,}\b",
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+]
+
 TOOL_PERMISSIONS = {
     "knowledge_search": {Role.VIEWER, Role.ANALYST, Role.ADMIN},
     "python_analysis": {Role.ANALYST, Role.ADMIN},
@@ -29,6 +35,22 @@ def validate_prompt(text: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Request rejected by prompt-injection protection",
         )
+
+
+def sanitize_retrieved_text(text: str) -> str:
+    """Remove instruction-like lines from untrusted documents before model context assembly."""
+    safe_lines = []
+    for line in text.splitlines():
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in INJECTION_PATTERNS):
+            safe_lines.append("[potential embedded instruction removed]")
+        else:
+            safe_lines.append(line)
+    return "\n".join(safe_lines)
+
+
+def validate_sensitive_output(text: str) -> bool:
+    """Return false when generated output resembles a credential or private key."""
+    return not any(re.search(pattern, text, re.IGNORECASE) for pattern in SENSITIVE_OUTPUT_PATTERNS)
 
 
 def authorize_tool(user: User, tool: str) -> None:

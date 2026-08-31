@@ -7,12 +7,13 @@ import httpx
 from app.config import get_settings
 from app.models import Evidence, User
 from app.retrieval import retriever
-from app.security import authorize_tool
+from app.security import authorize_tool, sanitize_retrieved_text
 
 
 async def knowledge_search(query: str, user: User, filters: dict[str, str]) -> list[Evidence]:
     authorize_tool(user, "knowledge_search")
-    return await asyncio.wait_for(retriever.search(query, user, filters), timeout=8)
+    evidence = await asyncio.wait_for(retriever.search(query, user, filters), timeout=8)
+    return [item.model_copy(update={"text": sanitize_retrieved_text(item.text)}) for item in evidence]
 
 
 async def python_analysis(evidence: list[Evidence], user: User) -> dict[str, Any]:
@@ -33,7 +34,11 @@ async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
         raise ValueError("Unsupported MCP resource")
     try:
         async with httpx.AsyncClient(timeout=4) as client:
-            response = await client.get(f"{get_settings().mcp_url}/resources/{resource}")
+            settings = get_settings()
+            response = await client.get(
+                f"{settings.mcp_url}/resources/{resource}",
+                headers={"X-MCP-Key": settings.mcp_shared_secret.get_secret_value()},
+            )
             response.raise_for_status()
             return response.json()
     except (TimeoutError, httpx.HTTPError):

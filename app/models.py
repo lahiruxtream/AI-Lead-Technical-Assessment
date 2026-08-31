@@ -32,6 +32,16 @@ class ChatRequest(BaseModel):
             raise ValueError("message is too long")
         return value
 
+    @field_validator("filters")
+    @classmethod
+    def validate_filters(cls, value: dict[str, str]) -> dict[str, str]:
+        allowed = {"department", "document_type", "created_date"}
+        if unknown := value.keys() - allowed:
+            raise ValueError(f"unsupported filters: {', '.join(sorted(unknown))}")
+        if any(not item or len(item) > 100 for item in value.values()):
+            raise ValueError("filter values must contain 1-100 characters")
+        return value
+
 
 class Evidence(BaseModel):
     document_id: str

@@ -15,7 +15,11 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
 api_url = os.getenv("API_URL", "http://localhost:8000")
-passwords = {"viewer": "viewer123", "analyst": "analyst123", "admin": "admin123"}
+passwords = {
+    "viewer": os.getenv("VIEWER_PASSWORD", "viewer123"),
+    "analyst": os.getenv("ANALYST_PASSWORD", "analyst123"),
+    "admin": os.getenv("ADMIN_PASSWORD", "admin123"),
+}
 
 with st.sidebar:
     st.header("Demo access")

@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
+from app.config import get_settings
 from app.models import Role, User
 
 security = HTTPBasic()
@@ -17,18 +18,28 @@ class UserRecord:
     user: User
 
 
-def _hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+_PBKDF2_ITERATIONS = 600_000
 
 
+def _hash(password: str, username: str) -> str:
+    """Slow, salted password derivation suitable for the assessment's local accounts."""
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), f"enterprise-assistant:{username}".encode(), _PBKDF2_ITERATIONS
+    ).hex()
+
+
+settings = get_settings()
 USERS = {
-    "viewer": UserRecord(_hash("viewer123"), User(username="viewer", role=Role.VIEWER)),
+    "viewer": UserRecord(
+        _hash(settings.viewer_password.get_secret_value(), "viewer"),
+        User(username="viewer", role=Role.VIEWER),
+    ),
     "analyst": UserRecord(
-        _hash("analyst123"),
+        _hash(settings.analyst_password.get_secret_value(), "analyst"),
         User(username="analyst", role=Role.ANALYST, departments=["payments", "platform"]),
     ),
     "admin": UserRecord(
-        _hash("admin123"),
+        _hash(settings.admin_password.get_secret_value(), "admin"),
         User(
             username="admin",
             role=Role.ADMIN,
@@ -43,7 +54,10 @@ async def current_user(
     credentials: Annotated[HTTPBasicCredentials, Depends(security)],
 ) -> User:
     record = USERS.get(credentials.username)
-    valid = record and secrets.compare_digest(record.password_hash, _hash(credentials.password))
+    # Always derive and compare a hash so unknown usernames do not create an obvious timing oracle.
+    expected = record.password_hash if record else "0" * 64
+    supplied = _hash(credentials.password, credentials.username)
+    valid = record is not None and secrets.compare_digest(expected, supplied)
     if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -10,7 +10,7 @@ from langgraph.graph import END, START, StateGraph
 from app.llm import generate_answer
 from app.memory import memory
 from app.models import ActivityEvent, Evidence, Role, User
-from app.security import validate_citations, validate_prompt
+from app.security import validate_citations, validate_prompt, validate_sensitive_output
 from app.tools import enterprise_mcp, knowledge_search, python_analysis
 
 EventSink = Callable[[ActivityEvent], Awaitable[None]]
@@ -124,15 +124,18 @@ async def response_node(state: AgentState) -> dict[str, Any]:
 
 async def validation_node(state: AgentState) -> dict[str, Any]:
     valid, invalid = validate_citations(state["answer"], state.get("evidence", []))
-    if not valid:
+    output_safe = validate_sensitive_output(state["answer"])
+    if not output_safe:
+        answer = "I cannot return this response because the output security policy rejected it."
+    elif not valid:
         answer = re.sub(r"\[(?:" + "|".join(map(re.escape, invalid)) + r")\]", "", state["answer"])
     else:
         answer = state["answer"]
     await emit(
         state, "validation", "validation", "Citation and response validation completed",
-        valid=valid, invalid_citations=invalid,
+        valid=valid and output_safe, invalid_citations=invalid, output_safe=output_safe,
     )
-    return {"answer": answer, "citations_valid": valid}
+    return {"answer": answer, "citations_valid": valid and output_safe}
 
 
 async def memory_node(state: AgentState) -> dict[str, Any]:

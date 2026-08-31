@@ -4,6 +4,9 @@ services:
     env_file: .env
     ports: ["8000:8000"]
     volumes: ["conversation_data:/workspace/data/runtime"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -14,13 +17,20 @@ services:
     env_file: .env
     command: ["streamlit", "run", "ui/streamlit_app.py", "--server.address=0.0.0.0"]
     volumes: ["./ui:/workspace/ui"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
     ports: ["8501:8501"]
     depends_on:
       api: {condition: service_healthy}
   mcp:
     build: .
     command: ["python", "-m", "app.mcp_server"]
-    ports: ["8010:8010"]
+    environment: ["MCP_BIND_HOST=0.0.0.0"]
+    expose: ["8010"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
 
 volumes:
   conversation_data:

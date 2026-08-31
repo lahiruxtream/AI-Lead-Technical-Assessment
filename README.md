@@ -53,7 +53,9 @@ streamlit run ui/streamlit_app.py
 | `analyst` | `analyst123` | Analyst | search, analysis, MCP |
 | `admin` | `admin123` | Administrator | all tools |
 
-These credentials are intentionally hardcoded for the assessment POC. Replace them with an identity provider for production.
+These environment-configurable credentials have development defaults for the assessment POC. Replace them with an identity provider for production.
+
+For production set `APP_ENV=production` and replace every demo password plus `MCP_SHARED_SECRET`. Startup fails if known development/placeholder secrets remain. Terminate TLS at a trusted reverse proxy and configure `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` exactly.
 
 ## Configuration
 
