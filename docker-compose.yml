@@ -1,9 +1,19 @@
 services:
+  volume-init:
+    build: .
+    user: "0:0"
+    command: ["sh", "-c", "chown -R app:app /workspace/data/runtime"]
+    volumes: ["conversation_data:/workspace/data/runtime"]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
   api:
     build: .
     env_file: .env
     ports: ["8000:8000"]
     volumes: ["conversation_data:/workspace/data/runtime"]
+    depends_on:
+      volume-init: {condition: service_completed_successfully}
     # Immutable root filesystems limit persistence after a container compromise.
     read_only: true
     tmpfs: ["/tmp"]
