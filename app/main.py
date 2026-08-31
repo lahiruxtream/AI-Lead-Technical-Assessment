@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from typing import Annotated
 
 import structlog
 from fastapi import Depends, FastAPI, HTTPException
@@ -11,10 +12,9 @@ from sse_starlette.sse import EventSourceResponse
 from app.auth import current_user
 from app.graph import run_agent
 from app.memory import memory
-from app.models import ActivityEvent, ChatRequest, ChatResponse, User
+from app.models import ActivityEvent, ChatRequest, ChatResponse, FeedbackRequest, User
 from app.retrieval import retriever
 from app.security import rate_limiter
-
 
 structlog.configure(
     processors=[structlog.contextvars.merge_contextvars, structlog.processors.TimeStamper(fmt="iso"),
@@ -22,6 +22,7 @@ structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
 )
 logger = structlog.get_logger()
+AuthenticatedUser = Annotated[User, Depends(current_user)]
 
 
 @asynccontextmanager
@@ -47,12 +48,12 @@ async def health() -> dict[str, object]:
 
 
 @app.get("/v1/conversations")
-async def conversations(user: User = Depends(current_user)) -> list[dict[str, str]]:
+async def conversations(user: AuthenticatedUser) -> list[dict[str, str]]:
     return await memory.list_sessions(user.username)
 
 
 @app.get("/v1/conversations/{session_id}")
-async def conversation(session_id: str, user: User = Depends(current_user)) -> dict[str, object]:
+async def conversation(session_id: str, user: AuthenticatedUser) -> dict[str, object]:
     messages = await memory.messages(session_id, user.username)
     if not messages:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -60,7 +61,7 @@ async def conversation(session_id: str, user: User = Depends(current_user)) -> d
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest, user: User = Depends(current_user)) -> ChatResponse:
+async def chat(request: ChatRequest, user: AuthenticatedUser) -> ChatResponse:
     rate_limiter.consume(user.username)
     try:
         result = await asyncio.wait_for(run_agent(request, user), timeout=45)
@@ -71,7 +72,7 @@ async def chat(request: ChatRequest, user: User = Depends(current_user)) -> Chat
         )
     except HTTPException:
         raise
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="Agent execution timed out") from exc
     except Exception as exc:
         await logger.aexception("agent_failed", user=user.username, error=str(exc))
@@ -79,7 +80,7 @@ async def chat(request: ChatRequest, user: User = Depends(current_user)) -> Chat
 
 
 @app.post("/v1/chat/stream")
-async def chat_stream(request: ChatRequest, user: User = Depends(current_user)) -> EventSourceResponse:
+async def chat_stream(request: ChatRequest, user: AuthenticatedUser) -> EventSourceResponse:
     rate_limiter.consume(user.username)
     queue: asyncio.Queue[ActivityEvent | None] = asyncio.Queue()
 
@@ -97,8 +98,15 @@ async def chat_stream(request: ChatRequest, user: User = Depends(current_user)) 
                 data={"citations": [item.model_dump() for item in result.get("evidence", [])],
                       "trace_id": result["trace_id"]},
             ))
-        except Exception as exc:
-            await queue.put(ActivityEvent(type="error", node="system", message=str(exc)))
+        except HTTPException as exc:
+            await queue.put(ActivityEvent(type="error", node="system", message=str(exc.detail)))
+        except TimeoutError:
+            await queue.put(ActivityEvent(type="error", node="system", message="Agent execution timed out"))
+        except Exception as exc:  # noqa: BLE001 - sanitize failures at the SSE task boundary
+            await logger.aexception("stream_agent_failed", user=user.username, error=str(exc))
+            await queue.put(
+                ActivityEvent(type="error", node="system", message="Assistant temporarily unavailable")
+            )
         finally:
             await queue.put(None)
 
@@ -109,3 +117,18 @@ async def chat_stream(request: ChatRequest, user: User = Depends(current_user)) 
         await task
 
     return EventSourceResponse(events())
+
+
+@app.post("/v1/feedback", status_code=201)
+async def feedback(request: FeedbackRequest, user: AuthenticatedUser) -> dict[str, str]:
+    """Capture an auditable answer-quality signal without exposing other users' sessions."""
+    try:
+        await memory.add_feedback(
+            request.session_id, user.username, request.rating, request.comment.strip()
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Conversation not found") from exc
+    await logger.ainfo(
+        "answer_feedback", user=user.username, session_id=request.session_id, rating=request.rating
+    )
+    return {"status": "recorded"}

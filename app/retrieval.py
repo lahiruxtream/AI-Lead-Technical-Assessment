@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import re
 from pathlib import Path
@@ -10,6 +11,8 @@ from rank_bm25 import BM25Okapi
 
 from app.config import get_settings
 from app.models import Evidence, User
+
+logger = logging.getLogger(__name__)
 
 
 def tokenize(text: str) -> list[str]:
@@ -83,9 +86,9 @@ class HybridRetriever:
                 )
                 cloud_scores = {match["id"]: float(match["score"]) for match in response["matches"]}
                 dense = [max(0.0, cloud_scores.get(doc["id"], 0.0)) for doc in self.documents]
-            except Exception:
+            except Exception as exc:
                 # A cloud outage degrades to the local dense index; the API remains available.
-                pass
+                logger.warning("pinecone_query_failed_using_local_fallback", exc_info=exc)
         sparse_max = max(sparse, default=1) or 1
         dense_max = max(dense, default=1) or 1
 

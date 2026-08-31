@@ -9,10 +9,9 @@ from langgraph.graph import END, START, StateGraph
 
 from app.llm import generate_answer
 from app.memory import memory
-from app.models import ActivityEvent, Evidence, User
+from app.models import ActivityEvent, Evidence, Role, User
 from app.security import validate_citations, validate_prompt
 from app.tools import enterprise_mcp, knowledge_search, python_analysis
-
 
 EventSink = Callable[[ActivityEvent], Awaitable[None]]
 
@@ -98,9 +97,21 @@ async def research_node(state: AgentState) -> dict[str, Any]:
         return f"Batch {index + 1}: " + ", ".join(causes)
 
     findings = await asyncio.gather(*(analyze_batch(i, batch) for i, batch in enumerate(batches)))
-    analytics = await python_analysis(evidence, state["user"])
-    await emit(state, "tool", "research", "Aggregating recursive findings", tool="python_analysis")
-    return {"analysis": "; ".join(findings) + f". Structured metrics: {analytics}"}
+    analysis = "; ".join(findings)
+    if state["user"].role in {Role.ANALYST, Role.ADMIN}:
+        analytics = await python_analysis(evidence, state["user"])
+        await emit(
+            state, "tool", "research", "Aggregating recursive findings", tool="python_analysis"
+        )
+        analysis += f". Structured metrics: {analytics}"
+    else:
+        await emit(
+            state,
+            "validation",
+            "research",
+            "Viewer-safe evidence synthesis used; analytics tool was not authorized",
+        )
+    return {"analysis": analysis}
 
 
 async def response_node(state: AgentState) -> dict[str, Any]:

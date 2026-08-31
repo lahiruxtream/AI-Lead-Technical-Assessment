@@ -42,6 +42,15 @@ class SessionMemory:
                 );
                 CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id, id);
                 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(username, updated_at);
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    rating INTEGER NOT NULL CHECK (rating IN (-1, 1)),
+                    comment TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES conversations(session_id)
+                );
                 """
             )
             await db.commit()
@@ -114,6 +123,25 @@ class SessionMemory:
                 ]
             )
         return messages
+
+    async def add_feedback(
+        self, session_id: str, username: str, rating: int, comment: str = ""
+    ) -> None:
+        """Persist quality feedback only when the user owns the conversation."""
+        now = datetime.now(UTC).isoformat()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT 1 FROM conversations WHERE session_id = ? AND username = ?",
+                (session_id, username),
+            )
+            if not await cursor.fetchone():
+                raise LookupError("Conversation not found")
+            await db.execute(
+                "INSERT INTO feedback(session_id, username, rating, comment, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, username, rating, comment, now),
+            )
+            await db.commit()
 
 
 memory = SessionMemory()

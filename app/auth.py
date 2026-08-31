@@ -1,12 +1,12 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.models import Role, User
-
 
 security = HTTPBasic()
 
@@ -39,7 +39,9 @@ USERS = {
 }
 
 
-async def current_user(credentials: HTTPBasicCredentials = Depends(security)) -> User:
+async def current_user(
+    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+) -> User:
     record = USERS.get(credentials.username)
     valid = record and secrets.compare_digest(record.password_hash, _hash(credentials.password))
     if not valid:

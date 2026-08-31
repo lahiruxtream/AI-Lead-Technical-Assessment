@@ -8,7 +8,6 @@ from fastapi import HTTPException, status
 from app.config import get_settings
 from app.models import Evidence, Role, User
 
-
 INJECTION_PATTERNS = [
     r"ignore (all|any|the|previous) instructions",
     r"reveal (the )?(system|developer) prompt",

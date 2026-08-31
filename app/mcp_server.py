@@ -1,6 +1,5 @@
-from fastapi import FastAPI
 import uvicorn
-
+from fastapi import FastAPI
 
 app = FastAPI(title="Dummy Enterprise MCP Data Service")
 DATA = {

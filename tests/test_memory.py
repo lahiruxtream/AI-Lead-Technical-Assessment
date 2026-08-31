@@ -19,3 +19,7 @@ async def test_conversations_persist_and_are_user_isolated(tmp_path):
         {"role": "user", "content": "First question"},
         {"role": "assistant", "content": "First answer", "citations": []},
     ]
+
+    await store.add_feedback("session-1", "viewer", 1, "Grounded and useful")
+    with pytest.raises(LookupError):
+        await store.add_feedback("session-1", "other-user", -1)

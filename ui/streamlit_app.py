@@ -5,7 +5,6 @@ import uuid
 import httpx
 import streamlit as st
 
-
 st.set_page_config(page_title="Commercial Bank Knowledge AI", page_icon="🏦", layout="wide")
 st.title("🏦 Commercial Bank Knowledge Assistant")
 st.caption("Grounded enterprise answers with transparent agent activity")
@@ -70,6 +69,28 @@ with st.sidebar:
     except httpx.HTTPError:
         st.caption("History becomes available when the API is running.")
 
+    st.divider()
+    with st.form("quality_feedback"):
+        st.subheader("Answer feedback")
+        rating_label = st.radio("Latest answer", ["Helpful", "Needs improvement"], horizontal=True)
+        feedback_comment = st.text_input("Comment (optional)", max_chars=1000)
+        if st.form_submit_button("Send feedback", use_container_width=True):
+            try:
+                result = httpx.post(
+                    f"{api_url}/v1/feedback",
+                    json={
+                        "session_id": st.session_state.session_id,
+                        "rating": 1 if rating_label == "Helpful" else -1,
+                        "comment": feedback_comment,
+                    },
+                    auth=(role, passwords[role]),
+                    timeout=5,
+                )
+                result.raise_for_status()
+                st.success("Feedback recorded")
+            except httpx.HTTPError:
+                st.error("Send a chat message before submitting feedback.")
+
 chat_col, activity_col = st.columns([3, 2])
 with chat_col:
     for message in st.session_state.messages:
@@ -98,11 +119,13 @@ if prompt:
         "filters": {} if department == "All" else {"department": department},
     }
     try:
-        with httpx.Client(timeout=60) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=60) as client,
+            client.stream(
                 "POST", f"{api_url}/v1/chat/stream", json=payload,
                 auth=(role, passwords[role]),
-            ) as response:
+            ) as response,
+        ):
                 response.raise_for_status()
                 event_name = "message"
                 for line in response.iter_lines():
@@ -124,6 +147,6 @@ if prompt:
         status.update(label="Agent completed", state="complete", expanded=True)
         answer_placeholder.chat_message("assistant").markdown(answer)
         st.session_state.messages.append({"role": "assistant", "content": answer, "citations": citations})
-    except Exception as exc:
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
         status.update(label="Request failed", state="error")
         answer_placeholder.error(f"Assistant unavailable: {exc}")

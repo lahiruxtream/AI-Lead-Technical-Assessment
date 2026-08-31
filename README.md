@@ -13,6 +13,7 @@ An enterprise-grade proof of concept built for the Lead AI technical assessment.
 - **Tools**: knowledge search, safe structured analysis, and a dummy enterprise MCP server
 - **Observability**: structured JSON logs, per-request event stream, and LangSmith tracing through LangChain/LangGraph environment configuration
 - **Deployment**: Docker Compose, health checks, sample documents, tests, and an architecture diagram
+- **Quality loop**: user-isolated positive/negative feedback persisted for offline evaluation
 
 ## Quick start
 
@@ -83,6 +84,8 @@ curl -u viewer:viewer123 http://localhost:8000/v1/chat \
 
 Streaming endpoint: `POST /v1/chat/stream`. Event types include `state`, `tool`, `retrieval`, `memory`, `validation`, `token`, `final`, and `error`.
 
+Feedback endpoint: `POST /v1/feedback` with `session_id`, a `rating` of `1` or `-1`, and an optional comment.
+
 ## Design decisions and trade-offs
 
 - Pinecone is the production vector store; the in-memory store is deliberate so evaluators can run the POC immediately.
@@ -93,6 +96,7 @@ Streaming endpoint: `POST /v1/chat/stream`. Event types include `state`, `tool`,
 - Authentication is Basic + hardcoded users solely because Option A is explicitly permitted. Password hashes, OAuth/OIDC, TLS, and a secrets manager are required in production.
 
 More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SECURITY.md](docs/SECURITY.md), and [docs/DEMO.md](docs/DEMO.md).
+The complete assessment-to-implementation mapping is in [docs/REQUIREMENTS_TRACEABILITY.md](docs/REQUIREMENTS_TRACEABILITY.md).
 
 ## Tests
 

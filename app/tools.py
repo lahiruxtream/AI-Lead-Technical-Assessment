@@ -36,7 +36,7 @@ async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
             response = await client.get(f"{get_settings().mcp_url}/resources/{resource}")
             response.raise_for_status()
             return response.json()
-    except (httpx.HTTPError, asyncio.TimeoutError):
+    except (TimeoutError, httpx.HTTPError):
         fallback = {
             "employee_directory": {"payments_on_call": "Nimal Perera", "extension": "4421"},
             "service_catalog": {"payments-api": {"owner": "Payments Platform", "tier": 1}},

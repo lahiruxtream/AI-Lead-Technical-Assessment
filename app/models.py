@@ -54,3 +54,9 @@ class ChatResponse(BaseModel):
     citations: list[Evidence]
     trace_id: str
     activities: list[ActivityEvent]
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=100, pattern=r"^[\w-]+$")
+    rating: Literal[-1, 1]
+    comment: str = Field(default="", max_length=1000)
