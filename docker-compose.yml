@@ -26,6 +26,10 @@ services:
   ui:
     build: .
     env_file: .env
+    environment:
+      HOME: /tmp
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      STREAMLIT_SERVER_FILE_WATCHER_TYPE: none
     command: ["streamlit", "run", "ui/streamlit_app.py", "--server.address=0.0.0.0"]
     volumes: ["./ui:/workspace/ui"]
     read_only: true
