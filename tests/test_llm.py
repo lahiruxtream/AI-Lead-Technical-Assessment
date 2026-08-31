@@ -52,3 +52,41 @@ async def test_procedure_answer_uses_best_runbook_without_distractor_documents()
     assert "circuit breaker" in answer
     assert "[RUN-1]" in answer
     assert "PROD-1" not in answer
+
+
+@pytest.mark.asyncio
+async def test_incident_summary_identifies_recurring_causes_without_raw_analysis():
+    evidence = [
+        Evidence(
+            document_id="INC-PAY-2025-001",
+            title="January outage",
+            text=(
+                "Payment authorization failed for 31 minutes. "
+                "Root cause: database connection pool exhaustion. The retry storm amplified load."
+            ),
+            score=0.9,
+            metadata={"document_type": "incident", "created_date": "2025-01-15"},
+        ),
+        Evidence(
+            document_id="INC-PAY-2025-002",
+            title="June outage",
+            text=(
+                "Gateway latency caused failures for 46 minutes. "
+                "Root cause: connection pool exhaustion caused by unbounded retries."
+            ),
+            score=0.8,
+            metadata={"document_type": "incident", "created_date": "2025-06-09"},
+        ),
+    ]
+
+    answer = await generate_answer(
+        "Summarize all payment outages in 2025 and identify recurring root causes.",
+        evidence,
+        "",
+        "Batch 1: internal diagnostic. Structured metrics: internal diagnostic.",
+    )
+
+    assert "Recurring root causes:" in answer
+    assert "connection-pool exhaustion appeared in 2 of 2 incidents" in answer
+    assert "Batch 1" not in answer
+    assert "Structured metrics" not in answer

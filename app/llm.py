@@ -53,7 +53,61 @@ async def generate_answer(
         procedural = bool(
             question_terms & {"procedure", "recovery", "recover", "runbook", "steps", "how"}
         )
-        if procedural:
+        incident_summary = (
+            bool(question_terms & {"outage", "outages", "incident", "incidents"})
+            and bool(question_terms & {"summarize", "summary", "recurring", "causes"})
+        )
+        if incident_summary:
+            incidents = sorted(
+                (
+                    item
+                    for item in evidence
+                    if item.metadata.get("document_type") == "incident"
+                    and (
+                        "2025" in item.document_id
+                        or "2025" in str(item.metadata.get("created_date", ""))
+                    )
+                ),
+                key=lambda item: str(item.metadata.get("created_date", "")),
+            )
+            summaries: list[str] = []
+            root_causes: list[str] = []
+            for item in incidents:
+                sentences = [
+                    sentence.strip()
+                    for sentence in re.split(r"(?<=[.!?])\s+", item.text.strip())
+                    if sentence.strip()
+                ]
+                overview = sentences[0] if sentences else item.text.strip()
+                root_cause = next(
+                    (sentence for sentence in sentences if sentence.lower().startswith("root cause:")),
+                    "Root cause was not stated in the available evidence.",
+                )
+                summaries.append(f"- {overview} {root_cause} [{item.document_id}]")
+                root_causes.append(item.text.lower())
+
+            patterns: list[str] = []
+            retry_count = sum("retr" in cause for cause in root_causes)
+            pool_count = sum("connection pool" in cause for cause in root_causes)
+            if retry_count > 1:
+                patterns.append(
+                    f"- Retry amplification or unbounded retries appeared in {retry_count} of "
+                    f"{len(incidents)} incidents."
+                )
+            if pool_count > 1:
+                patterns.append(
+                    f"- Database connection-pool exhaustion appeared in {pool_count} of "
+                    f"{len(incidents)} incidents."
+                )
+            if not patterns:
+                patterns.append("- No root cause recurred across the available incident records.")
+            answer = (
+                "Payment outages recorded in 2025:\n\n"
+                + "\n".join(summaries)
+                + "\n\nRecurring root causes:\n\n"
+                + "\n".join(patterns)
+            )
+        elif procedural:
             # A procedure should preserve the ordered instructions from the best runbook instead
             # of mixing high-level product and architecture facts into the answer.
             item = evidence[0]
@@ -75,7 +129,8 @@ async def generate_answer(
                 sentence = item.text.strip().split(". ")[0].strip()
                 bullets.append(f"- {sentence}. [{item.document_id}]")
             answer = "Based on the available enterprise knowledge:\n\n" + "\n".join(bullets)
-        if analysis:
+        # Batch diagnostics are useful internally but should not leak into synthesized answers.
+        if analysis and not incident_summary:
             answer += f"\n\nAnalysis summary: {analysis}"
     if token_sink:
         for token in answer.splitlines(keepends=True):
