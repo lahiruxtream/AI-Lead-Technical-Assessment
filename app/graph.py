@@ -63,9 +63,12 @@ async def supervisor_node(state: AgentState) -> dict[str, Any]:
     await emit(state, "state", "supervisor", "Understanding intent and routing task")
     text = state["question"].lower()
     # Deterministic routing keeps the POC explainable and avoids an extra classification LLM call.
-    if any(word in text for word in ("who owns", "employee", "service catalog", "on call")):
+    if any(word in text for word in ("who owns", "employee", "service catalog", "on call", "on-call")):
         intent = "mcp"
-    elif any(word in text for word in ("summarize all", "recurring", "compare", "trend", "root cause")):
+    elif any(
+        word in text
+        for word in ("summarize all", "recurring", "compare", "trend", "root cause", "analyze")
+    ):
         intent = "research"
     else:
         intent = "search"
@@ -80,7 +83,26 @@ async def retrieval_node(state: AgentState) -> dict[str, Any]:
     """Invoke authorized hybrid retrieval and expose provenance through activity events."""
 
     await emit(state, "tool", "retrieval", "Executing hybrid knowledge search", tool="knowledge_search")
-    evidence = await knowledge_search(state["question"], state["user"], state.get("filters", {}))
+    question = state["question"]
+    question_lower = question.lower()
+    filters = dict(state.get("filters", {}))
+    # Infer narrow document types for clear requests while preserving explicit API filters.
+    if "document_type" not in filters:
+        if any(term in question_lower for term in ("incident", "outage")):
+            filters["document_type"] = "incident"
+        elif "architecture" in question_lower:
+            filters["document_type"] = "architecture"
+        elif any(term in question_lower for term in ("procedure", "runbook")):
+            filters["document_type"] = "runbook"
+    # Citation-based follow-ups re-query the same authorized source so provenance validation and
+    # the response citation payload remain complete on every individual request.
+    context_ids = re.findall(r"\[([A-Z0-9-]+)\]", state.get("context", ""))
+    if context_ids and any(
+        phrase in question_lower
+        for phrase in ("that incident", "those incidents", "which document", "what document")
+    ):
+        question += " " + " ".join(dict.fromkeys(context_ids))
+    evidence = await knowledge_search(question, state["user"], filters)
     await emit(
         state, "retrieval", "retrieval", f"Retrieved {len(evidence)} authorized documents",
         documents=[{"id": item.document_id, "score": item.score} for item in evidence],
@@ -96,8 +118,14 @@ async def research_node(state: AgentState) -> dict[str, Any]:
     if intent == "mcp":
         # Authorization is repeated inside the MCP tool, not trusted to this routing decision.
         await emit(state, "tool", "research", "Calling enterprise MCP service", tool="enterprise_mcp")
-        result = await enterprise_mcp("service_catalog", state["user"])
-        return {"analysis": f"Enterprise service catalog result: {result}"}
+        question = state["question"].lower()
+        resource = (
+            "employee_directory"
+            if any(term in question for term in ("employee", "on call", "on-call", "contact"))
+            else "service_catalog"
+        )
+        result = await enterprise_mcp(resource, state["user"])
+        return {"analysis": "MCP_RESULT:" + json.dumps(result)}
     if intent != "research":
         return {"analysis": ""}
 

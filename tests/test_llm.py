@@ -90,3 +90,83 @@ async def test_incident_summary_identifies_recurring_causes_without_raw_analysis
     assert "connection-pool exhaustion appeared in 2 of 2 incidents" in answer
     assert "Batch 1" not in answer
     assert "Structured metrics" not in answer
+
+
+@pytest.mark.asyncio
+async def test_architecture_question_returns_components_from_architecture_document():
+    evidence = [
+        Evidence(
+            document_id="ARCH-1",
+            title="Architecture",
+            text="The platform uses an API gateway. Services publish through Kafka.",
+            score=0.9,
+            metadata={"document_type": "architecture"},
+        ),
+        Evidence(
+            document_id="INC-1",
+            title="Incident",
+            text="The API failed for ten minutes.",
+            score=0.8,
+            metadata={"document_type": "incident"},
+        ),
+    ]
+
+    answer = await generate_answer("Explain the platform architecture.", evidence, "", "")
+
+    assert "API gateway" in answer
+    assert "Kafka" in answer
+    assert "[ARCH-1]" in answer
+    assert "[INC-1]" not in answer
+
+
+@pytest.mark.asyncio
+async def test_follow_up_prefers_previously_cited_incident_and_returns_recovery_action():
+    evidence = [
+        Evidence(
+            document_id="INC-2",
+            title="Another incident",
+            text="A different outage occurred. Remediation introduced a cache.",
+            score=0.9,
+            metadata={"document_type": "incident"},
+        ),
+        Evidence(
+            document_id="INC-1",
+            title="Previous incident",
+            text="The payment API failed. Resolution included bounded retries.",
+            score=0.7,
+            metadata={"document_type": "incident"},
+        ),
+    ]
+
+    answer = await generate_answer(
+        "What recovery actions were taken for that incident?",
+        evidence,
+        "Assistant: The payment API failed. [INC-1]",
+        "",
+    )
+
+    assert "bounded retries" in answer
+    assert "[INC-1]" in answer
+    assert "[INC-2]" not in answer
+
+
+@pytest.mark.asyncio
+async def test_mcp_result_is_rendered_without_internal_serialization():
+    answer = await generate_answer(
+        "Who owns the payments API and what is its support channel?",
+        [
+            Evidence(
+                document_id="DOC-1",
+                title="Document",
+                text="Unrelated document.",
+                score=0.1,
+                metadata={},
+            )
+        ],
+        "",
+        'MCP_RESULT:{"payments-api":{"owner":"Payments Platform","tier":1,"channel":"#pay-ops"}}',
+    )
+
+    assert "Payments Platform" in answer
+    assert "#pay-ops" in answer
+    assert "MCP_RESULT" not in answer

@@ -126,6 +126,9 @@ class HybridRetriever:
             if any(str(metadata.get(key)) != str(value) for key, value in filters.items()):
                 continue
             score = 0.45 * float(sparse[index] / sparse_max) + 0.55 * (dense[index] / dense_max)
+            # Explicit document references must outrank fuzzy topical matches.
+            if doc["id"].lower() in query.lower():
+                score += 2
             ranked.append((score, doc))
         ranked.sort(key=lambda item: item[0], reverse=True)
         return [

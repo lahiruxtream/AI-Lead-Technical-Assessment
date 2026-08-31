@@ -74,7 +74,13 @@ async def enterprise_mcp(resource: str, user: User) -> dict[str, Any]:
         # The fallback is synthetic and explicitly labelled so it cannot be mistaken for live data.
         fallback = {
             "employee_directory": {"payments_on_call": "Nimal Perera", "extension": "4421"},
-            "service_catalog": {"payments-api": {"owner": "Payments Platform", "tier": 1}},
+            "service_catalog": {
+                "payments-api": {
+                    "owner": "Payments Platform",
+                    "tier": 1,
+                    "channel": "#pay-ops",
+                }
+            },
             "incident_records": {"open_sev1": 0, "open_sev2": 1},
         }
         return {"source": "graceful-fallback", "data": fallback[resource]}
